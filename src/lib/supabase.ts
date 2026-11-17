@@ -1,5 +1,10 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { NuevoTicketInput, TicketTI } from '../types/tickets';
+import {
+  DEFAULT_ASIGNADO,
+  normalizeAsignadoA,
+  NuevoTicketInput,
+  TicketTI,
+} from '../types/tickets';
 
 const rawUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const rawKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -16,7 +21,7 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
   ? createClient(rawUrl!, rawKey!)
   : null;
 
-const LOCAL_STORAGE_KEY = 'ferco_tickets_ti_v1';
+const LOCAL_STORAGE_KEY = 'ferco_tickets_ti_v2';
 const BROADCAST_CHANNEL_NAME = 'ferco_tickets_ti_realtime_sync';
 
 const horasAtras = (horas: number): string =>
@@ -29,16 +34,16 @@ const SEED_TICKETS: TicketTI[] = [
     created_at: horasAtras(74),
     updated_at: horasAtras(62),
     solicitante_nombre: 'Roberto Méndez',
-    departamento_tienda: 'Tiendas Comerciales (Sucursales)',
+    departamento_tienda: 'TIENDA | SNÖ Delicias (Grupo Ferco Maracaibo C.A. - Maracaibo)',
     categoria: 'Infraestructura / Redes / Starlink',
-    titulo: 'Intermitencia en enlace principal y failover a Starlink en Sucursal Norte',
+    titulo: 'Intermitencia en enlace principal y failover a Starlink en SNÖ Delicias',
     descripcion:
       'El enlace de fibra óptica presenta pérdida de paquetes del 45%. Estamos operando sobre el backup de Starlink pero necesitamos revisión del proveedor fibra y ajuste en el balanceador MikroTik.',
     impacto: 3,
     urgencia: 2,
     score_prioridad: 6,
     estado: 'Esperando Proveedor/Tercero',
-    asignado_a: 'Plinio Becerra',
+    asignado_a: 'Plinio Becerra - Analista de Soluciones de Negocio',
     notas_tecnicas:
       'Se abrió ticket #ISP-99412 con el proveedor de fibra óptica. Failover automático en router MikroTik activo sobre antena Starlink.',
     fecha_resolucion: null,
@@ -49,7 +54,7 @@ const SEED_TICKETS: TicketTI[] = [
     created_at: horasAtras(5),
     updated_at: horasAtras(2),
     solicitante_nombre: 'Gabriela Rojas',
-    departamento_tienda: 'Tiendas Comerciales (Sede Principal)',
+    departamento_tienda: 'TIENDA | SNÖ Sambil (Operadora 1903 C.A. - Maracaibo)',
     categoria: 'Odoo ERP / TPV Tiendas',
     titulo: 'Diferencia en sincronización de sesión de Punto de Venta (Caja 03) en Odoo',
     descripcion:
@@ -58,9 +63,9 @@ const SEED_TICKETS: TicketTI[] = [
     urgencia: 3,
     score_prioridad: 9,
     estado: 'En Progreso',
-    asignado_a: 'Luis Lugo',
+    asignado_a: 'Luis Lugo - Analista BI/TI',
     notas_tecnicas:
-      'Revisando diarios de pago IGTF y conciliación de pos.order en Odoo 17. Validando con contabilidad antes de forzar cierre.',
+      'Revisando diarios de pago IGTF y conciliación de pos.order en Odoo. Validando con CONTABILIDAD antes de forzar cierre.',
     fecha_resolucion: null,
   },
   {
@@ -69,18 +74,18 @@ const SEED_TICKETS: TicketTI[] = [
     created_at: horasAtras(18),
     updated_at: horasAtras(4),
     solicitante_nombre: 'Carlos Villamizar',
-    departamento_tienda: 'Gerencia General / Directiva',
+    departamento_tienda: 'GERENCIA',
     categoria: 'Business Intelligence / Reportes',
     titulo: 'Actualización de Dashboard de Rotación de Inventario y Margen por Familia',
     descripcion:
-      'Incluir el comparativo intermensual de rotación de productos importados y alerta de stock mínimo para comité del jueves.',
+      'Incluir el comparativo intermensual de rotación de tiendas SNÖ y Chönkies y alerta de stock mínimo para comité de Junta Directiva.',
     impacto: 2,
     urgencia: 3,
     score_prioridad: 6,
     estado: 'En Progreso',
-    asignado_a: 'Cristina Núñez',
+    asignado_a: 'Juan García - Gerente BI/TI',
     notas_tecnicas:
-      'Vista materializada en PostgreSQL lista. Ajustando medidas DAX y filtros por sucursal.',
+      'Vista materializada en PostgreSQL lista. Ajustando filtros por Razón Social y Municipio.',
     fecha_resolucion: null,
   },
   {
@@ -89,16 +94,16 @@ const SEED_TICKETS: TicketTI[] = [
     created_at: horasAtras(9),
     updated_at: horasAtras(8),
     solicitante_nombre: 'Mariana Pérez',
-    departamento_tienda: 'Suministros / Compras',
+    departamento_tienda: 'CADENA DE SUMINISTROS | CDP1',
     categoria: 'Desarrollo / Automatización',
     titulo: 'Automatizar carga masiva de listas de precios de proveedores vía plantilla Excel',
     descripcion:
-      'Necesitamos script o asistente para actualizar costos de reposición sin editar línea por línea en acuerdos de compra.',
+      'Necesitamos asistente para actualizar costos de reposición sin editar línea por línea en acuerdos de compra de CDP1 y CDP2.',
     impacto: 2,
     urgencia: 2,
     score_prioridad: 4,
     estado: 'En Cola',
-    asignado_a: 'Leonardo Semprún',
+    asignado_a: 'Leonardo Semprun - Especialista de Soluciones de Negocio',
     notas_tecnicas: 'Se diseñará validador previo de SKU para evitar duplicados.',
     fecha_resolucion: null,
   },
@@ -108,16 +113,16 @@ const SEED_TICKETS: TicketTI[] = [
     created_at: horasAtras(1),
     updated_at: horasAtras(1),
     solicitante_nombre: 'Andrés Morales',
-    departamento_tienda: 'Capital Humano',
+    departamento_tienda: 'RRHH',
     categoria: 'Accesos / Google Workspace',
     titulo: 'Creación de cuenta corporativa Google Workspace y permisos Odoo para nuevo analista',
     descripcion:
-      'Ingreso programado en departamento de Compras. Requiere correo corporativo, grupo de distribución y perfil Lector/Comprador en Odoo.',
+      'Ingreso programado en departamento de CONTABILIDAD. Requiere correo corporativo, grupo de distribución y perfil en Odoo.',
     impacto: 1,
     urgencia: 2,
     score_prioridad: 2,
     estado: 'Bandeja de Entrada',
-    asignado_a: 'Marinés González',
+    asignado_a: 'Luis Lugo - Analista BI/TI',
     notas_tecnicas: '',
     fecha_resolucion: null,
   },
@@ -127,21 +132,29 @@ const SEED_TICKETS: TicketTI[] = [
     created_at: horasAtras(28),
     updated_at: horasAtras(6),
     solicitante_nombre: 'Elena Castillo',
-    departamento_tienda: 'Operaciones / Logística',
+    departamento_tienda: 'OPERACIONES | CDA-CCS',
     categoria: 'Hardware / Impresoras / Equipos',
-    titulo: 'Configuración de impresora térmica Zebra de etiquetas en Almacén Central',
+    titulo: 'Configuración de impresora térmica Zebra de etiquetas en CDA-CCS',
     descripcion:
-      'Se desconfiguró el tamaño de etiqueta de código de barras tras reinicio de estación de despacho.',
+      'Se desconfiguró el tamaño de etiqueta de código de barras tras reinicio de estación de recepción.',
     impacto: 2,
     urgencia: 2,
     score_prioridad: 4,
     estado: 'Resuelto',
-    asignado_a: 'Juan García',
+    asignado_a: 'Plinio Becerra - Analista de Soluciones de Negocio',
     notas_tecnicas:
       'Se calibró sensor de gap en Zebra ZD220 y se fijó perfil 50x25mm predeterminado en el servidor de impresión.',
     fecha_resolucion: horasAtras(6),
   },
 ];
+
+function normalizeTicketsList(list: TicketTI[]): TicketTI[] {
+  return list.map((t) => ({
+    ...t,
+    asignado_a: normalizeAsignadoA(t.asignado_a),
+    score_prioridad: t.score_prioridad ?? t.impacto * t.urgencia,
+  }));
+}
 
 function getLocalTickets(): TicketTI[] {
   try {
@@ -151,7 +164,7 @@ function getLocalTickets(): TicketTI[] {
       return SEED_TICKETS;
     }
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : SEED_TICKETS;
+    return Array.isArray(parsed) ? normalizeTicketsList(parsed) : SEED_TICKETS;
   } catch {
     return SEED_TICKETS;
   }
@@ -170,7 +183,11 @@ function saveLocalTickets(tickets: TicketTI[]): void {
   }
 }
 
-export async function fetchTicketsTI(): Promise<{ data: TicketTI[]; mode: 'supabase' | 'local'; error?: string }> {
+export async function fetchTicketsTI(): Promise<{
+  data: TicketTI[];
+  mode: 'supabase' | 'local';
+  error?: string;
+}> {
   if (supabase) {
     const { data, error } = await supabase
       .from('tickets_ti')
@@ -179,11 +196,7 @@ export async function fetchTicketsTI(): Promise<{ data: TicketTI[]; mode: 'supab
       .order('created_at', { ascending: false });
 
     if (!error && data) {
-      const normalized = (data as TicketTI[]).map((t) => ({
-        ...t,
-        score_prioridad: t.score_prioridad ?? t.impacto * t.urgencia,
-      }));
-      return { data: normalized, mode: 'supabase' };
+      return { data: normalizeTicketsList(data as TicketTI[]), mode: 'supabase' };
     }
     console.warn('Supabase fallback a modo local:', error?.message);
     return {
@@ -196,7 +209,9 @@ export async function fetchTicketsTI(): Promise<{ data: TicketTI[]; mode: 'supab
   return { data: getLocalTickets(), mode: 'local' };
 }
 
-export async function createTicketTI(input: NuevoTicketInput): Promise<{ ticket: TicketTI; mode: 'supabase' | 'local' }> {
+export async function createTicketTI(
+  input: NuevoTicketInput
+): Promise<{ ticket: TicketTI; mode: 'supabase' | 'local' }> {
   const payload = {
     solicitante_nombre: input.solicitante_nombre.trim(),
     departamento_tienda: input.departamento_tienda.trim(),
@@ -206,7 +221,7 @@ export async function createTicketTI(input: NuevoTicketInput): Promise<{ ticket:
     impacto: input.impacto,
     urgencia: input.urgencia,
     estado: input.estado || 'Bandeja de Entrada',
-    asignado_a: input.asignado_a || 'Luis Lugo',
+    asignado_a: normalizeAsignadoA(input.asignado_a || DEFAULT_ASIGNADO),
     notas_tecnicas: input.notas_tecnicas ?? '',
   };
 
@@ -220,6 +235,7 @@ export async function createTicketTI(input: NuevoTicketInput): Promise<{ ticket:
     if (!error && data) {
       const created: TicketTI = {
         ...(data as TicketTI),
+        asignado_a: normalizeAsignadoA(data.asignado_a),
         score_prioridad: data.score_prioridad ?? data.impacto * data.urgencia,
       };
       return { ticket: created, mode: 'supabase' };
@@ -232,7 +248,10 @@ export async function createTicketTI(input: NuevoTicketInput): Promise<{ ticket:
   const nowIso = new Date().toISOString();
 
   const newTicket: TicketTI = {
-    id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `local-${Date.now()}`,
+    id:
+      typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `local-${Date.now()}`,
     codigo_ticket: maxCodigo + 1,
     created_at: nowIso,
     updated_at: nowIso,
@@ -257,12 +276,29 @@ export async function createTicketTI(input: NuevoTicketInput): Promise<{ ticket:
 
 export async function updateTicketTI(
   id: string,
-  changes: Partial<Pick<TicketTI, 'estado' | 'asignado_a' | 'notas_tecnicas' | 'impacto' | 'urgencia' | 'categoria' | 'titulo' | 'descripcion' | 'fecha_resolucion'>>
+  changes: Partial<
+    Pick<
+      TicketTI,
+      | 'estado'
+      | 'asignado_a'
+      | 'notas_tecnicas'
+      | 'impacto'
+      | 'urgencia'
+      | 'categoria'
+      | 'titulo'
+      | 'descripcion'
+      | 'fecha_resolucion'
+    >
+  >
 ): Promise<{ ticket: TicketTI; mode: 'supabase' | 'local' }> {
   const nowIso = new Date().toISOString();
   const patch: Record<string, unknown> = {
     ...changes,
   };
+
+  if (changes.asignado_a) {
+    patch.asignado_a = normalizeAsignadoA(changes.asignado_a);
+  }
 
   if (changes.estado === 'Resuelto' && changes.fecha_resolucion === undefined) {
     patch.fecha_resolucion = nowIso;
@@ -281,6 +317,7 @@ export async function updateTicketTI(
     if (!error && data) {
       const updatedTicket: TicketTI = {
         ...(data as TicketTI),
+        asignado_a: normalizeAsignadoA(data.asignado_a),
         score_prioridad: data.score_prioridad ?? data.impacto * data.urgencia,
       };
       return { ticket: updatedTicket, mode: 'supabase' };
@@ -300,14 +337,13 @@ export async function updateTicketTI(
     updatedItem = {
       ...item,
       ...changes,
+      asignado_a: normalizeAsignadoA(changes.asignado_a ?? item.asignado_a),
       impacto: nextImpacto,
       urgencia: nextUrgencia,
       score_prioridad: nextImpacto * nextUrgencia,
       updated_at: nowIso,
       fecha_resolucion:
-        nextEstado === 'Resuelto'
-          ? item.fecha_resolucion || nowIso
-          : null,
+        nextEstado === 'Resuelto' ? item.fecha_resolucion || nowIso : null,
     };
     return updatedItem;
   });

@@ -5,19 +5,22 @@ import {
   AlertTriangle,
   AlertOctagon,
   Search,
-  UserCheck,
   MessageSquareText,
   ArrowRight,
   CheckCircle2,
   Clock,
   Building2,
-  PlusCircle,
-  SlidersHorizontal,
+  Plus,
+  MapPin,
 } from 'lucide-react';
 import {
   AsignadoA,
+  CATALOGO_DEPARTAMENTOS,
+  CATALOGO_SEDES_DETALLE,
   CATEGORIAS_TICKET,
   CategoriaTicket,
+  composeUbicacion,
+  DEFAULT_ASIGNADO,
   EQUIPO_TI_BI,
   ESTADOS_TICKET,
   EstadoTicket,
@@ -28,14 +31,10 @@ import {
   NivelImpacto,
   NivelUrgencia,
   NuevoTicketInput,
+  parseUbicacion,
   TicketTI,
 } from '../types/tickets';
-import {
-  CategorySvgIcon,
-  EmptyColumnVectorSvg,
-  EstadoColumnaSvg,
-  SpecialistAvatarSvg,
-} from './BrandSvgElements';
+import { SpecialistBadge } from './BrandSvgElements';
 import { TicketModalDialog } from './TicketModalDialog';
 
 interface CentroComandoViewProps {
@@ -54,17 +53,18 @@ interface CentroComandoViewProps {
         | 'categoria'
         | 'titulo'
         | 'descripcion'
+        | 'departamento_tienda'
       >
     >
   ) => Promise<void>;
 }
 
 const CATEGORIA_SHORT_LABELS: Record<CategoriaTicket, string> = {
-  'Infraestructura / Redes / Starlink': 'Infra / Starlink',
-  'Odoo ERP / TPV Tiendas': 'Odoo / TPV',
+  'Infraestructura / Redes / Starlink': 'Infraestructura / Starlink',
+  'Odoo ERP / TPV Tiendas': 'Odoo ERP / TPV',
   'Business Intelligence / Reportes': 'BI / Reportes',
-  'Hardware / Impresoras / Equipos': 'Hardware / Impr.',
-  'Accesos / Google Workspace': 'Accesos / Google',
+  'Hardware / Impresoras / Equipos': 'Hardware / Impresoras',
+  'Accesos / Google Workspace': 'Accesos / Workspace',
   'Desarrollo / Automatización': 'Desarrollo / Auto.',
 };
 
@@ -84,13 +84,17 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
   const quickTitleId = useId();
   const searchInputId = useId();
   const filterAsignadoId = useId();
+  const filterDeptoId = useId();
+  const filterSedeId = useId();
 
   // Estado de Captura Rápida (Quick-Add < 5 seg)
   const [quickTitle, setQuickTitle] = useState('');
   const [quickCat, setQuickCat] = useState<CategoriaTicket>('Odoo ERP / TPV Tiendas');
+  const [quickDepto, setQuickDepto] = useState<string>('BI/TI');
+  const [quickSede, setQuickSede] = useState<string>('N/A (Oficina / No aplica)');
   const [quickImpacto, setQuickImpacto] = useState<NivelImpacto>(2);
   const [quickUrgencia, setQuickUrgencia] = useState<NivelUrgencia>(2);
-  const [quickAsignado, setQuickAsignado] = useState<AsignadoA>('Luis Lugo');
+  const [quickAsignado, setQuickAsignado] = useState<AsignadoA>(DEFAULT_ASIGNADO);
   const [isQuickSaving, setIsQuickSaving] = useState(false);
   const [quickFeedback, setQuickFeedback] = useState<string | null>(null);
 
@@ -98,6 +102,8 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
   const [modoFoco, setModoFoco] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filtroAsignado, setFiltroAsignado] = useState<string>('TODOS');
+  const [filtroDepartamento, setFiltroDepartamento] = useState<string>('TODOS');
+  const [filtroSede, setFiltroSede] = useState<string>('TODAS');
   const [selectedTicket, setSelectedTicket] = useState<TicketTI | null>(null);
   const [draggedTicketId, setDraggedTicketId] = useState<string | null>(null);
   const [dragOverCol, setDragOverCol] = useState<EstadoTicket | null>(null);
@@ -109,8 +115,8 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
     setIsQuickSaving(true);
     try {
       const created = await onCreateTicket({
-        solicitante_nombre: 'Captura Rápida (Pasillo / Directo)',
-        departamento_tienda: 'Operación Directa TI/BI',
+        solicitante_nombre: 'Captura Rápida (Control Directo)',
+        departamento_tienda: composeUbicacion(quickDepto, quickSede),
         categoria: quickCat,
         titulo: quickTitle.trim(),
         descripcion: 'Registrado mediante barra de Captura Rápida en el Centro de Comando.',
@@ -121,7 +127,7 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
       });
       setQuickTitle('');
       setQuickFeedback(
-        `${formatCodigoTicket(created.codigo_ticket)} guardado en Bandeja de Entrada`
+        `${formatCodigoTicket(created.codigo_ticket)} encolado correctamente`
       );
       setTimeout(() => setQuickFeedback(null), 3500);
     } finally {
@@ -129,7 +135,6 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
     }
   };
 
-  // Manejar Enter verificando !isComposing según modern-web-guidance (forms)
   const handleQuickKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
       e.preventDefault();
@@ -137,7 +142,7 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
     }
   };
 
-  // Aplicar filtros: Modo Foco / Fuego Hoy + Especialista + Búsqueda
+  // Filtrado integral de tickets
   const filteredTickets = tickets.filter((t) => {
     if (modoFoco) {
       const esEnProgreso = t.estado === 'En Progreso';
@@ -146,6 +151,14 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
     }
 
     if (filtroAsignado !== 'TODOS' && t.asignado_a !== filtroAsignado) {
+      return false;
+    }
+
+    const ubic = parseUbicacion(t.departamento_tienda);
+    if (filtroDepartamento !== 'TODOS' && ubic.departamento !== filtroDepartamento) {
+      return false;
+    }
+    if (filtroSede !== 'TODAS' && ubic.sede !== filtroSede) {
       return false;
     }
 
@@ -192,16 +205,16 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
       {/* 1. BARRA SUPERIOR DE CAPTURA RÁPIDA (QUICK-ADD < 5 SEGUNDOS) */}
       <section
         aria-label="Captura Rápida de Requerimientos"
-        className="rounded-2xl border border-gcf-500/35 bg-gradient-to-r from-slate-900 via-slate-900/95 to-gcf-900/40 p-3.5 shadow-gcf-glow sm:p-4"
+        className="rounded-md border border-slate-200 bg-white p-3.5 shadow-xs"
       >
-        <form onSubmit={handleQuickAddSubmit} className="space-y-3">
-          <div className="flex flex-col gap-2.5 lg:flex-row lg:items-center">
-            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-gcf-200 shrink-0">
-              <Zap className="h-4 w-4 text-gcf-400" aria-hidden="true" />
-              <label htmlFor={quickTitleId}>Captura Rápida (Pasillo / 5s):</label>
+        <form onSubmit={handleQuickAddSubmit} className="space-y-2.5">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+            <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-800 shrink-0">
+              <Zap className="h-3.5 w-3.5 text-blue-700" aria-hidden="true" />
+              <label htmlFor={quickTitleId}>Captura Rápida:</label>
             </div>
 
-            <div className="relative flex-1">
+            <div className="flex-1">
               <input
                 id={quickTitleId}
                 name="quick_title"
@@ -209,31 +222,51 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
                 value={quickTitle}
                 onChange={(e) => setQuickTitle(e.target.value)}
                 onKeyDown={handleQuickKeyDown}
-                placeholder="Escribe el requerimiento y presiona Enter para guardar al instante..."
-                className="min-h-[44px] w-full rounded-xl border border-slate-700 bg-gcf-950/90 px-3.5 py-2 text-sm text-white placeholder:text-slate-400 focus:border-gcf-500 focus:outline-none focus:ring-2 focus:ring-gcf-500/30"
+                placeholder="Escriba el requerimiento rápido y presione Enter para encolar..."
+                className="h-9 w-full rounded-sm border border-slate-300 bg-white px-3 text-xs text-slate-900 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
               />
             </div>
 
-            {/* Selector rápido de asignado (con icono SVG) y prioridad en 1 línea */}
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative flex items-center">
-                <UserCheck
-                  className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-gcf-300"
-                  aria-hidden="true"
-                />
-                <select
-                  aria-label="Asignar captura rápida a especialista"
-                  value={quickAsignado}
-                  onChange={(e) => setQuickAsignado(e.target.value as AsignadoA)}
-                  className="min-h-[42px] rounded-xl border border-slate-700 bg-gcf-950 pl-8 pr-2.5 py-1.5 text-xs font-medium text-slate-200 focus:border-gcf-500 focus:outline-none"
-                >
-                  {EQUIPO_TI_BI.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            {/* Selectores compactos de Departamento, Sede, Responsable y Prioridad */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <select
+                aria-label="Departamento de captura rápida"
+                value={quickDepto}
+                onChange={(e) => setQuickDepto(e.target.value)}
+                className="h-9 rounded-sm border border-slate-300 bg-slate-50 px-2 text-xs font-medium text-slate-800 focus:border-blue-700 focus:bg-white focus:outline-none"
+              >
+                {CATALOGO_DEPARTAMENTOS.map((dep) => (
+                  <option key={dep} value={dep}>
+                    Área: {dep}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                aria-label="Sede comercial de captura rápida"
+                value={quickSede}
+                onChange={(e) => setQuickSede(e.target.value)}
+                className="h-9 max-w-[180px] rounded-sm border border-slate-300 bg-slate-50 px-2 text-xs font-medium text-slate-800 focus:border-blue-700 focus:bg-white focus:outline-none"
+              >
+                {CATALOGO_SEDES_DETALLE.map((s) => (
+                  <option key={s.valor} value={s.valor}>
+                    {s.nombreCorto}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                aria-label="Asignar captura rápida a integrante BI/TI"
+                value={quickAsignado}
+                onChange={(e) => setQuickAsignado(e.target.value as AsignadoA)}
+                className="h-9 max-w-[195px] rounded-sm border border-slate-300 bg-slate-50 px-2 text-xs font-medium text-slate-800 focus:border-blue-700 focus:bg-white focus:outline-none"
+              >
+                {EQUIPO_TI_BI.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
 
               <select
                 aria-label="Prioridad rápida"
@@ -243,7 +276,7 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
                   setQuickImpacto((imp || 2) as NivelImpacto);
                   setQuickUrgencia((urg || 2) as NivelUrgencia);
                 }}
-                className="min-h-[42px] rounded-xl border border-slate-700 bg-gcf-950 px-2.5 py-1.5 text-xs font-medium text-slate-200 focus:border-gcf-500 focus:outline-none"
+                className="h-9 rounded-sm border border-slate-300 bg-slate-50 px-2 text-xs font-medium text-slate-800 focus:border-blue-700 focus:bg-white focus:outline-none"
               >
                 <option value="1x1">P4 Baja (Score 1)</option>
                 <option value="2x2">P3 Media (Score 4)</option>
@@ -254,18 +287,18 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
               <button
                 type="submit"
                 disabled={isQuickSaving || !quickTitle.trim()}
-                className="inline-flex min-h-[42px] items-center gap-1.5 rounded-xl bg-gradient-to-r from-gcf-500 to-gcf-800 px-4 py-2 text-xs font-bold text-white shadow-md shadow-gcf-800/40 transition hover:brightness-110 disabled:opacity-50"
+                className="inline-flex h-9 items-center gap-1 rounded-sm bg-blue-700 px-3.5 text-xs font-bold text-white transition hover:bg-blue-800 disabled:opacity-50"
               >
-                <PlusCircle className="h-4 w-4" aria-hidden="true" />
-                <span>Guardar (Enter)</span>
+                <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>Guardar</span>
               </button>
             </div>
           </div>
 
-          {/* Botones de Categoría con 1 solo clic e icono SVG a medida */}
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="mr-1 text-[11px] font-medium text-slate-400">
+          {/* Selección de Categoría en 1 clic */}
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2">
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="mr-1 text-[11px] font-semibold text-slate-500">
                 Categoría (1 clic):
               </span>
               {CATEGORIAS_TICKET.map((cat) => {
@@ -276,14 +309,13 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
                     type="button"
                     onClick={() => setQuickCat(cat)}
                     aria-pressed={selected}
-                    className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition ${
+                    className={`rounded-sm border px-2.5 py-1 text-[11px] font-semibold transition ${
                       selected
-                        ? 'border-gcf-400 bg-gcf-500/20 text-white shadow-sm ring-1 ring-gcf-400/30'
-                        : 'border-slate-800 bg-gcf-950/60 text-slate-400 hover:border-gcf-500/40 hover:text-slate-200'
+                        ? 'border-blue-700 bg-blue-700 text-white'
+                        : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300 hover:bg-slate-100'
                     }`}
                   >
-                    <CategorySvgIcon categoria={cat} className="h-3.5 w-3.5 shrink-0" />
-                    <span>{CATEGORIA_SHORT_LABELS[cat]}</span>
+                    {CATEGORIA_SHORT_LABELS[cat]}
                   </button>
                 );
               })}
@@ -291,8 +323,8 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
 
             <div aria-live="polite" className="text-xs">
               {quickFeedback && (
-                <span className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-1 font-semibold text-emerald-300">
-                  <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+                <span className="inline-flex items-center gap-1 rounded-sm border border-emerald-300 bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-800">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-700" aria-hidden="true" />
                   {quickFeedback}
                 </span>
               )}
@@ -301,78 +333,79 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
         </form>
       </section>
 
-      {/* 2. BARRA DE CONTROL: MODO FOCO / FUEGO HOY + ALERTAS WIP + FILTROS (<search>) */}
-      <search className="flex flex-col gap-3 rounded-2xl border border-gcf-500/20 bg-slate-900/75 p-3.5 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-wrap items-center gap-2.5">
+      {/* 2. BARRA DE CONTROL: MODO FOCO + ALERTAS WIP + FILTROS ORGANIZACIONALES (<search>) */}
+      <search className="flex flex-col gap-2.5 rounded-md border border-slate-200 bg-white p-3 shadow-xs xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Botón Modo Foco / Fuego Hoy */}
           <button
             type="button"
             aria-pressed={modoFoco}
             onClick={() => setModoFoco((prev) => !prev)}
-            className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-xs font-bold transition-all ${
+            className={`inline-flex h-8 items-center gap-1.5 rounded-sm border px-3 text-xs font-bold transition ${
               modoFoco
-                ? 'border-rose-500 bg-gradient-to-r from-rose-600 to-amber-600 text-white shadow-lg shadow-rose-950/60 ring-2 ring-rose-400/40'
-                : 'border-gcf-500/30 bg-gcf-950 text-slate-200 hover:border-amber-500/50 hover:text-amber-200'
+                ? 'border-red-700 bg-red-600 text-white'
+                : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
             }`}
           >
             <Flame
-              className={`h-4 w-4 ${modoFoco ? 'animate-pulse text-amber-200' : 'text-amber-400'}`}
+              className={`h-3.5 w-3.5 ${modoFoco ? 'text-white' : 'text-red-600'}`}
               aria-hidden="true"
             />
             <span>Modo Foco / Fuego Hoy</span>
             <span
-              className={`rounded-md px-1.5 py-0.5 text-[10px] ${
-                modoFoco ? 'bg-black/30 text-white' : 'bg-slate-800 text-slate-300'
+              className={`rounded-sm px-1.5 py-0.2 font-mono text-[10px] ${
+                modoFoco
+                  ? 'bg-red-800 text-white'
+                  : 'bg-slate-100 text-slate-600 border border-slate-200'
               }`}
             >
-              {modoFoco ? 'ACTIVO (En Progreso o Score ≥ 6)' : 'Inactivo'}
+              {modoFoco ? 'ACTIVO' : 'OFF'}
             </span>
           </button>
 
-          {/* Indicador global de WIP Limit */}
+          {/* Indicador de WIP Limit */}
           <div
-            className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold ${
+            className={`inline-flex h-8 items-center gap-1.5 rounded-sm border px-2.5 text-xs font-semibold ${
               wipLimitExceeded
-                ? 'border-rose-500/70 bg-rose-950/40 text-rose-200 ring-1 ring-rose-500/40'
+                ? 'border-red-400 bg-red-50 text-red-800'
                 : wipAtLimit
-                ? 'border-amber-500/60 bg-amber-950/30 text-amber-200'
-                : 'border-gcf-500/25 bg-gcf-950/70 text-gcf-100'
+                ? 'border-amber-400 bg-amber-50 text-amber-800'
+                : 'border-slate-200 bg-slate-50 text-slate-700'
             }`}
           >
             <AlertTriangle
-              className={`h-4 w-4 shrink-0 ${
+              className={`h-3.5 w-3.5 shrink-0 ${
                 wipLimitExceeded
-                  ? 'text-rose-400'
+                  ? 'text-red-600'
                   : wipAtLimit
-                  ? 'text-amber-400'
-                  : 'text-gcf-400'
+                  ? 'text-amber-600'
+                  : 'text-slate-500'
               }`}
               aria-hidden="true"
             />
             <span>
-              WIP En Progreso:{' '}
-              <strong className="font-mono">{totalEnProgreso}/3</strong>
+              WIP En Progreso: <strong className="font-mono">{totalEnProgreso}/3</strong>
             </span>
             {wipLimitExceeded && (
-              <span className="rounded bg-rose-500/30 px-1.5 py-0.5 text-[10px] font-bold uppercase text-rose-200">
-                ¡Saturación!
+              <span className="rounded-sm bg-red-600 px-1.5 py-0.2 text-[10px] font-bold uppercase text-white">
+                Límite Excedido
               </span>
             )}
           </div>
 
           {totalEstancadosProveedor > 0 && (
-            <div className="inline-flex items-center gap-1.5 rounded-xl border border-amber-500/50 bg-amber-950/30 px-3 py-2 text-xs font-semibold text-amber-200">
-              <AlertOctagon className="h-4 w-4 text-amber-400" aria-hidden="true" />
-              <span>{totalEstancadosProveedor} ticket(s) &gt;48h en Proveedor/Tercero</span>
+            <div className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-amber-400 bg-amber-50 px-2.5 text-xs font-semibold text-amber-900">
+              <AlertOctagon className="h-3.5 w-3.5 text-amber-700" aria-hidden="true" />
+              <span>{totalEstancadosProveedor} ticket(s) &gt;48h en Proveedor</span>
             </div>
           )}
         </div>
 
-        {/* Buscador y Filtro por Miembro del Equipo */}
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="relative flex-1 sm:w-64 sm:flex-initial">
+        {/* Filtros por Texto, Departamento, Sede y Especialista */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 sm:w-52 sm:flex-initial">
             <Search
-              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gcf-300"
+              className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
               aria-hidden="true"
             />
             <label htmlFor={searchInputId} className="sr-only">
@@ -383,23 +416,60 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
               type="search"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Buscar FER-TI-00X, tienda, asunto..."
-              className="min-h-[40px] w-full rounded-xl border border-slate-700 bg-gcf-950 pl-9 pr-3 py-1.5 text-xs text-white placeholder:text-slate-400 focus:border-gcf-500 focus:outline-none"
+              placeholder="Buscar FER-TI-00X, asunto..."
+              className="h-8 w-full rounded-sm border border-slate-300 bg-white pl-8 pr-2.5 text-xs text-slate-900 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none"
             />
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <SlidersHorizontal className="h-3.5 w-3.5 text-gcf-300" aria-hidden="true" />
+          <div>
+            <label htmlFor={filterDeptoId} className="sr-only">
+              Filtrar por Departamento / Área
+            </label>
+            <select
+              id={filterDeptoId}
+              value={filtroDepartamento}
+              onChange={(e) => setFiltroDepartamento(e.target.value)}
+              className="h-8 rounded-sm border border-slate-300 bg-white px-2 text-xs font-medium text-slate-700 focus:border-blue-700 focus:outline-none"
+            >
+              <option value="TODOS">Todos los Departamentos</option>
+              {CATALOGO_DEPARTAMENTOS.map((dep) => (
+                <option key={dep} value={dep}>
+                  {dep}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor={filterSedeId} className="sr-only">
+              Filtrar por Sede Comercial / Centro
+            </label>
+            <select
+              id={filterSedeId}
+              value={filtroSede}
+              onChange={(e) => setFiltroSede(e.target.value)}
+              className="h-8 max-w-[190px] rounded-sm border border-slate-300 bg-white px-2 text-xs font-medium text-slate-700 focus:border-blue-700 focus:outline-none"
+            >
+              <option value="TODAS">Todas las Sedes / Tiendas</option>
+              {CATALOGO_SEDES_DETALLE.map((s) => (
+                <option key={s.valor} value={s.valor}>
+                  {s.nombreCorto}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
             <label htmlFor={filterAsignadoId} className="sr-only">
-              Filtrar por especialista asignado
+              Filtrar por integrante del equipo BI/TI
             </label>
             <select
               id={filterAsignadoId}
               value={filtroAsignado}
               onChange={(e) => setFiltroAsignado(e.target.value)}
-              className="min-h-[40px] rounded-xl border border-slate-700 bg-gcf-950 px-3 py-1.5 text-xs font-semibold text-slate-200 focus:border-gcf-500 focus:outline-none"
+              className="h-8 max-w-[210px] rounded-sm border border-slate-300 bg-white px-2 text-xs font-semibold text-slate-800 focus:border-blue-700 focus:outline-none"
             >
-              <option value="TODOS">Equipo Completo ({tickets.length})</option>
+              <option value="TODOS">Equipo BI/TI ({tickets.length})</option>
               {EQUIPO_TI_BI.map((miembro) => (
                 <option key={miembro} value={miembro}>
                   {miembro}
@@ -410,8 +480,8 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
         </div>
       </search>
 
-      {/* 3. TABLERO KANBAN INTERACTIVO POR ESTADO (5 COLUMNAS) */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+      {/* 3. TABLERO KANBAN INTERACTIVO POR ESTADO (5 COLUMNAS SOBRIAS) */}
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
         {ESTADOS_TICKET.map((columnaEstado) => {
           const colTickets = filteredTickets
             .filter((t) => t.estado === columnaEstado)
@@ -421,15 +491,14 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
           const isProveedorCol = columnaEstado === 'Esperando Proveedor/Tercero';
           const isDragOver = dragOverCol === columnaEstado;
 
-          // Estilo de alerta visual WIP Limit en la columna 'En Progreso'
-          let colBorderClasses = 'border-gcf-500/20 bg-slate-900/65';
+          // Estilo de columna en gris claro corporativo + alerta WIP Limit
+          let colBorderClasses = 'border border-slate-200 bg-slate-100';
           if (isEnProgresoCol && wipLimitExceeded) {
-            colBorderClasses =
-              'border-2 border-rose-500/90 bg-rose-950/20 ring-2 ring-rose-500/30 shadow-lg shadow-rose-950/40';
+            colBorderClasses = 'border-2 border-red-600 bg-red-50/40';
           } else if (isEnProgresoCol && wipAtLimit) {
-            colBorderClasses = 'border-2 border-amber-500/80 bg-amber-950/15';
+            colBorderClasses = 'border-2 border-amber-500 bg-amber-50/30';
           } else if (isDragOver) {
-            colBorderClasses = 'border-2 border-gcf-400 bg-gcf-900/30';
+            colBorderClasses = 'border-2 border-blue-700 bg-blue-50/30';
           }
 
           return (
@@ -442,70 +511,62 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
               }}
               onDragLeave={() => setDragOverCol(null)}
               onDrop={() => handleDropOnColumn(columnaEstado)}
-              className={`flex flex-col rounded-2xl border p-3 transition-all min-h-[540px] ${colBorderClasses}`}
+              className={`flex flex-col rounded-md p-2.5 transition min-h-[540px] ${colBorderClasses}`}
             >
-              {/* Cabecera de Columna con Icono Vectorial SVG */}
-              <div className="mb-3 border-b border-slate-800/80 pb-2.5">
+              {/* Cabecera de Columna */}
+              <div className="mb-2.5 border-b border-slate-200 pb-2">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <EstadoColumnaSvg
-                      estado={columnaEstado}
-                      wipAlert={isEnProgresoCol && wipLimitExceeded}
-                      className="h-4 w-4 shrink-0"
-                    />
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-100">
-                      {columnaEstado === 'Bandeja de Entrada'
-                        ? 'Bandeja de Entrada (Triage)'
-                        : columnaEstado}
-                    </h3>
-                  </div>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                    {columnaEstado === 'Bandeja de Entrada'
+                      ? 'Bandeja de Entrada (Triage)'
+                      : columnaEstado}
+                  </h3>
 
                   <span
-                    className={`rounded-full px-2 py-0.5 font-mono text-xs font-bold ${
+                    className={`rounded-sm px-1.5 py-0.5 font-mono text-[11px] font-bold ${
                       isEnProgresoCol && wipLimitExceeded
-                        ? 'bg-rose-500 text-white'
-                        : 'bg-gcf-950 border border-gcf-500/30 text-gcf-200'
+                        ? 'bg-red-600 text-white'
+                        : 'border border-slate-300 bg-white text-slate-700'
                     }`}
                   >
                     {isEnProgresoCol ? `${colTickets.length}/3` : colTickets.length}
                   </span>
                 </div>
 
-                {/* Banner WIP Limit dentro de la columna En Progreso */}
+                {/* Alerta visual WIP Limit dentro de la columna En Progreso */}
                 {isEnProgresoCol && wipLimitExceeded && (
                   <div
                     role="alert"
-                    className="mt-2 flex items-start gap-1.5 rounded-xl border border-rose-500/50 bg-rose-500/15 p-2 text-[11px] font-semibold leading-tight text-rose-200"
+                    className="mt-2 flex items-start gap-1.5 rounded-sm border border-red-300 bg-red-100 p-2 text-[11px] font-semibold leading-tight text-red-900"
                   >
                     <AlertTriangle
-                      className="h-4 w-4 shrink-0 text-rose-400"
+                      className="h-3.5 w-3.5 shrink-0 text-red-700"
                       aria-hidden="true"
                     />
                     <span>
-                      ¡WIP Limit Excedido ({totalEnProgreso}/3)! Cierra o pasa a espera antes
-                      de abrir otra tarea.
+                      Alerta WIP Limit ({totalEnProgreso}/3): Exceso de tareas simultáneas en
+                      curso.
                     </span>
                   </div>
                 )}
 
                 {isProveedorCol && (
-                  <p className="mt-1 text-[10px] text-slate-400">
-                    Alerta automática si supera 48h sin movimiento
+                  <p className="mt-0.5 text-[10px] text-slate-500">
+                    Monitoreo SLA de terceros (&gt;48h sin movimiento)
                   </p>
                 )}
               </div>
 
-              {/* Lista de Tarjetas */}
-              <div className="flex-1 space-y-2.5 overflow-y-auto pr-0.5">
+              {/* Lista de Tarjetas Blancas con Borde Izquierdo de Prioridad */}
+              <div className="flex-1 space-y-2 overflow-y-auto pr-0.5">
                 {colTickets.length === 0 ? (
-                  <div className="flex h-44 flex-col items-center justify-center rounded-xl border border-dashed border-gcf-500/20 bg-gcf-950/30 p-4 text-center">
-                    <EmptyColumnVectorSvg className="mb-1.5 h-12 w-12" />
-                    <p className="text-xs font-medium text-slate-400">
+                  <div className="flex h-36 flex-col items-center justify-center rounded-sm border border-dashed border-slate-300 bg-slate-50/70 p-4 text-center">
+                    <p className="text-xs font-medium text-slate-500">
                       Sin requerimientos en esta columna
                     </p>
                     {modoFoco && (
-                      <span className="mt-1 text-[10px] text-amber-400/90">
-                        (Modo Foco / Fuego Hoy activo)
+                      <span className="mt-1 text-[10px] font-semibold text-red-700">
+                        (Filtro Modo Foco activo)
                       </span>
                     )}
                   </div>
@@ -515,6 +576,9 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
                     const estancado48h = estaEstancadoProveedor(ticket);
                     const horas = getHorasSinMoverse(ticket);
                     const nextEstado = NEXT_STATE_MAP[ticket.estado];
+                    const ubic = parseUbicacion(ticket.departamento_tienda);
+                    const nombreCortoAsignado =
+                      ticket.asignado_a.split(' - ')[0] || ticket.asignado_a;
 
                     return (
                       <article
@@ -526,87 +590,100 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
                           setDragOverCol(null);
                         }}
                         onClick={() => setSelectedTicket(ticket)}
-                        className={`group relative cursor-pointer rounded-xl border bg-gcf-950/90 p-3 shadow-sm transition-all hover:-translate-y-0.5 hover:border-gcf-400/60 hover:shadow-gcf-glow ${
-                          estancado48h
-                            ? 'border-amber-500/70 ring-1 ring-amber-500/30'
-                            : 'border-slate-800/90'
-                        } ${meta.borderClass}`}
+                        className={`group relative cursor-pointer rounded-sm border border-slate-200 bg-white p-2.5 shadow-xs transition hover:border-slate-400 ${meta.borderClass}`}
                       >
                         {/* Fila 1: Código + Badge Score Prioridad */}
-                        <div className="flex flex-wrap items-center justify-between gap-1.5">
-                          <span className="font-mono text-xs font-black text-gcf-300 group-hover:text-gcf-200">
+                        <div className="flex items-center justify-between gap-1.5">
+                          <span className="font-mono text-xs font-bold text-blue-700 group-hover:underline">
                             {formatCodigoTicket(ticket.codigo_ticket)}
                           </span>
 
                           <span
-                            className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold ${meta.badgeClass}`}
+                            className={`inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[10px] font-bold ${meta.badgeClass}`}
                           >
-                            <span className={`h-1.5 w-1.5 rounded-full ${meta.dotClass}`} />
-                            Score {ticket.score_prioridad} ({meta.nivel})
+                            <span className={`h-1.5 w-1.5 rounded-sm ${meta.dotClass}`} />
+                            Score {ticket.score_prioridad} • {meta.nivel}
                           </span>
                         </div>
 
                         {/* Alerta >48h en Esperando Proveedor/Tercero */}
                         {estancado48h && (
-                          <div className="mt-2 flex items-center gap-1.5 rounded-lg border border-amber-500/50 bg-amber-500/15 px-2 py-1 text-[10px] font-bold text-amber-200">
+                          <div className="mt-1.5 flex items-center gap-1 rounded-sm border border-amber-300 bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-900">
                             <AlertOctagon
-                              className="h-3.5 w-3.5 shrink-0 text-amber-400"
+                              className="h-3 w-3 shrink-0 text-amber-700"
                               aria-hidden="true"
                             />
-                            <span>¡Alerta! {horas}h esperando proveedor/tercero</span>
+                            <span>+{horas}h esperando proveedor/tercero</span>
                           </div>
                         )}
 
                         {/* Título del Ticket */}
-                        <h4 className="mt-2 line-clamp-2 text-xs font-bold leading-snug text-slate-100 group-hover:text-white">
+                        <h4 className="mt-1.5 line-clamp-2 text-xs font-bold leading-snug text-slate-900">
                           {ticket.titulo}
                         </h4>
 
-                        {/* Categoría con Icono SVG + Departamento */}
-                        <div className="mt-2 space-y-1.5 text-[11px] text-slate-400">
-                          <div className="inline-flex items-center gap-1.5 rounded-md border border-gcf-500/25 bg-slate-900/90 px-2 py-0.5 font-medium text-gcf-200">
-                            <CategorySvgIcon
-                              categoria={ticket.categoria}
-                              className="h-3.5 w-3.5 shrink-0"
-                            />
-                            <span>
-                              {CATEGORIA_SHORT_LABELS[ticket.categoria] || ticket.categoria}
-                            </span>
+                        {/* Categoría + Departamento + Sede */}
+                        <div className="mt-2 space-y-1 text-[11px] text-slate-600">
+                          <div className="inline-block rounded-sm border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700">
+                            {CATEGORIA_SHORT_LABELS[ticket.categoria] || ticket.categoria}
                           </div>
-                          <div className="flex items-center gap-1 truncate">
-                            <Building2 className="h-3 w-3 shrink-0 text-gcf-400" aria-hidden="true" />
-                            <span className="truncate">{ticket.departamento_tienda}</span>
-                            <span className="text-slate-600">•</span>
-                            <span className="truncate text-slate-300">
+
+                          <div className="flex items-center gap-1 truncate text-[11px]">
+                            <Building2
+                              className="h-3 w-3 shrink-0 text-slate-400"
+                              aria-hidden="true"
+                            />
+                            <span className="font-semibold text-slate-800">
+                              {ubic.departamento}
+                            </span>
+                            <span className="text-slate-400">•</span>
+                            <span className="truncate text-slate-600">
                               {ticket.solicitante_nombre}
                             </span>
                           </div>
+
+                          {ubic.sede !== 'N/A (Oficina / No aplica)' && (
+                            <div className="flex items-center gap-1 truncate text-[10px] text-slate-500">
+                              <MapPin
+                                className="h-3 w-3 shrink-0 text-blue-700"
+                                aria-hidden="true"
+                              />
+                              <span className="truncate font-medium text-slate-700">
+                                {ubic.sede}
+                              </span>
+                            </div>
+                          )}
                         </div>
 
                         {/* Preview de Notas Técnicas si existen */}
                         {ticket.notas_tecnicas && (
-                          <div className="mt-2 flex items-start gap-1.5 rounded-lg border border-slate-800/90 bg-slate-900/70 p-1.5 text-[10px] text-slate-300">
+                          <div className="mt-2 flex items-start gap-1.5 rounded-sm border border-slate-200 bg-slate-50 p-1.5 text-[10px] text-slate-700">
                             <MessageSquareText
-                              className="mt-0.5 h-3 w-3 shrink-0 text-gcf-400"
+                              className="mt-0.5 h-3 w-3 shrink-0 text-slate-500"
                               aria-hidden="true"
                             />
                             <span className="line-clamp-2">{ticket.notas_tecnicas}</span>
                           </div>
                         )}
 
-                        {/* Pie de Tarjeta: Avatar SVG Especialista + Acciones Rápidas en 1 Clic */}
-                        <div className="mt-3 flex items-center justify-between gap-2 border-t border-slate-800/80 pt-2">
-                          <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-200">
-                            <SpecialistAvatarSvg nombre={ticket.asignado_a} size="sm" />
-                            <span className="truncate max-w-[105px]">{ticket.asignado_a}</span>
+                        {/* Pie de Tarjeta: Especialista + Avance Rápido */}
+                        <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-slate-100 pt-2">
+                          <div
+                            className="flex items-center gap-1.5 text-[11px] font-medium text-slate-700"
+                            title={ticket.asignado_a}
+                          >
+                            <SpecialistBadge nombre={ticket.asignado_a} size="sm" />
+                            <span className="truncate max-w-[100px]">
+                              {nombreCortoAsignado}
+                            </span>
                           </div>
 
                           <div
                             className="flex items-center gap-1"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <span className="mr-1 inline-flex items-center gap-0.5 text-[10px] text-slate-400">
-                              <Clock className="h-3 w-3" aria-hidden="true" />
+                            <span className="mr-0.5 inline-flex items-center gap-0.5 text-[10px] text-slate-500">
+                              <Clock className="h-2.5 w-2.5" aria-hidden="true" />
                               {horas}h
                             </span>
 
@@ -616,12 +693,12 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
                                 onClick={() =>
                                   onUpdateTicket(ticket.id, { estado: nextEstado })
                                 }
-                                className="inline-flex items-center gap-1 rounded-lg border border-gcf-400/40 bg-gcf-500/20 px-2 py-1 text-[10px] font-bold text-gcf-100 transition hover:bg-gcf-500 hover:text-white"
+                                className="inline-flex items-center gap-0.5 rounded-sm border border-slate-300 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-800 transition hover:border-blue-700 hover:bg-blue-700 hover:text-white"
                               >
                                 <span>
                                   {nextEstado === 'Resuelto' ? 'Resolver' : nextEstado}
                                 </span>
-                                <ArrowRight className="h-3 w-3" aria-hidden="true" />
+                                <ArrowRight className="h-2.5 w-2.5" aria-hidden="true" />
                               </button>
                             )}
                           </div>

@@ -13,6 +13,8 @@ import {
   Flame,
 } from 'lucide-react';
 import {
+  CATALOGO_DEPARTAMENTOS,
+  CATALOGO_SEDES_DETALLE,
   CATEGORIAS_TICKET,
   EQUIPO_TI_BI,
   ESTADOS_TICKET,
@@ -20,12 +22,10 @@ import {
   formatCodigoTicket,
   getHorasSinMoverse,
   getPrioridadMeta,
+  parseUbicacion,
   TicketTI,
 } from '../types/tickets';
-import {
-  CategorySvgIcon,
-  SpecialistAvatarSvg,
-} from './BrandSvgElements';
+import { SpecialistBadge } from './BrandSvgElements';
 import { getExpectedPin, setCustomPin } from './PinAuthDialog';
 import { TicketModalDialog } from './TicketModalDialog';
 
@@ -44,6 +44,7 @@ interface DashboardKPIsViewProps {
         | 'categoria'
         | 'titulo'
         | 'descripcion'
+        | 'departamento_tienda'
       >
     >
   ) => Promise<void>;
@@ -55,11 +56,15 @@ export const DashboardKPIsView: React.FC<DashboardKPIsViewProps> = ({
 }) => {
   const filterEstadoId = useId();
   const filterCatId = useId();
+  const filterDeptoId = useId();
+  const filterSedeId = useId();
   const filterAsignadoId = useId();
   const newPinInputId = useId();
 
   const [filtroEstado, setFiltroEstado] = useState<string>('TODOS');
   const [filtroCategoria, setFiltroCategoria] = useState<string>('TODAS');
+  const [filtroDepartamento, setFiltroDepartamento] = useState<string>('TODOS');
+  const [filtroSede, setFiltroSede] = useState<string>('TODAS');
   const [filtroAsignado, setFiltroAsignado] = useState<string>('TODOS');
   const [selectedTicket, setSelectedTicket] = useState<TicketTI | null>(null);
 
@@ -102,6 +107,14 @@ export const DashboardKPIsView: React.FC<DashboardKPIsViewProps> = ({
     if (filtroEstado !== 'TODOS' && t.estado !== filtroEstado) return false;
     if (filtroCategoria !== 'TODAS' && t.categoria !== filtroCategoria) return false;
     if (filtroAsignado !== 'TODOS' && t.asignado_a !== filtroAsignado) return false;
+
+    const ubic = parseUbicacion(t.departamento_tienda);
+    if (filtroDepartamento !== 'TODOS' && ubic.departamento !== filtroDepartamento) {
+      return false;
+    }
+    if (filtroSede !== 'TODAS' && ubic.sede !== filtroSede) {
+      return false;
+    }
     return true;
   });
 
@@ -110,7 +123,8 @@ export const DashboardKPIsView: React.FC<DashboardKPIsViewProps> = ({
       'Codigo Ticket',
       'Fecha Creacion',
       'Solicitante',
-      'Departamento / Tienda',
+      'Departamento / Area',
+      'Sede Comercial / Centro',
       'Categoria',
       'Titulo',
       'Descripcion',
@@ -133,11 +147,13 @@ export const DashboardKPIsView: React.FC<DashboardKPIsViewProps> = ({
 
     const rows = historialFiltrado.map((t) => {
       const meta = getPrioridadMeta(t.score_prioridad);
+      const ubic = parseUbicacion(t.departamento_tienda);
       return [
         formatCodigoTicket(t.codigo_ticket),
         new Date(t.created_at).toLocaleString('es-VE'),
         t.solicitante_nombre,
-        t.departamento_tienda,
+        ubic.departamento,
+        ubic.sede,
         t.categoria,
         t.titulo,
         t.descripcion,
@@ -186,39 +202,39 @@ export const DashboardKPIsView: React.FC<DashboardKPIsViewProps> = ({
     : null;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Cabecera Ejecutiva + Exportación */}
-      <div className="flex flex-col justify-between gap-4 rounded-2xl border border-gcf-500/25 bg-gradient-to-r from-slate-900 via-slate-900/95 to-gcf-900/40 p-4 shadow-gcf-glow sm:flex-row sm:items-center sm:p-5">
+      <div className="flex flex-col justify-between gap-3 rounded-md border border-slate-200 bg-white p-4 shadow-xs sm:flex-row sm:items-center sm:px-5">
         <div>
-          <span className="text-xs font-bold uppercase tracking-wider text-gcf-300">
-            Dashboard Ejecutivo para Gerencia
+          <span className="text-[11px] font-bold uppercase tracking-wider text-blue-700">
+            Reporte Ejecutivo de Gestión ITSM • Grupo Comercializadora Ferco
           </span>
-          <h2 className="text-lg font-bold text-white sm:text-xl">
-            Indicadores de Carga Operativa, SLA y Resolución TI/BI
+          <h2 className="text-base font-bold text-slate-900 sm:text-lg">
+            Indicadores de Carga Operativa, SLA y Productividad BI/TI
           </h2>
-          <p className="text-xs text-slate-300">
-            Monitoreo en tiempo real de requerimientos por unidad de negocio, cuellos de
-            botella de proveedores y productividad del equipo.
+          <p className="text-xs text-slate-600">
+            Consolidado de requerimientos por unidad de negocio, sedes comerciales y
+            desempeño de resolución.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => setShowPinConfig((p) => !p)}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-gcf-500/35 bg-gcf-950 px-3.5 py-2.5 text-xs font-semibold text-gcf-100 transition hover:border-gcf-400 hover:text-white"
+            className="inline-flex h-9 items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
           >
-            <KeyRound className="h-4 w-4 text-gcf-400" aria-hidden="true" />
+            <KeyRound className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
             <span>Configurar PIN</span>
           </button>
 
           <button
             type="button"
             onClick={handleExportCSV}
-            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-gcf-500 to-gcf-800 px-4 py-2.5 text-xs font-bold text-white shadow-gcf-glow transition hover:brightness-110"
+            className="inline-flex h-9 items-center gap-1.5 rounded-sm bg-blue-700 px-4 text-xs font-bold text-white transition hover:bg-blue-800"
           >
-            <Download className="h-4 w-4" aria-hidden="true" />
-            <span>Exportar Historial a Excel / CSV ({historialFiltrado.length})</span>
+            <Download className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>Exportar Excel / CSV ({historialFiltrado.length})</span>
           </button>
         </div>
       </div>
@@ -227,12 +243,12 @@ export const DashboardKPIsView: React.FC<DashboardKPIsViewProps> = ({
       {showPinConfig && (
         <form
           onSubmit={handleSavePin}
-          className="flex flex-wrap items-end gap-3 rounded-2xl border border-gcf-500/35 bg-gcf-900/25 p-4"
+          className="flex flex-wrap items-end gap-3 rounded-md border border-slate-300 bg-white p-4 shadow-xs"
         >
           <div>
             <label
               htmlFor={newPinInputId}
-              className="mb-1 block text-xs font-bold uppercase tracking-wider text-gcf-200"
+              className="mb-1 block text-xs font-bold uppercase tracking-wider text-slate-700"
             >
               Nuevo PIN de Acceso (Mínimo 4 dígitos)
             </label>
@@ -244,68 +260,64 @@ export const DashboardKPIsView: React.FC<DashboardKPIsViewProps> = ({
               required
               value={newPinValue}
               onChange={(e) => setNewPinValue(e.target.value)}
-              className="min-h-[40px] rounded-xl border border-slate-700 bg-gcf-950 px-3 py-1.5 font-mono text-sm text-white focus:border-gcf-500 focus:outline-none"
+              className="h-9 rounded-sm border border-slate-300 bg-white px-3 font-mono text-sm text-slate-900 focus:border-blue-700 focus:outline-none"
             />
           </div>
           <button
             type="submit"
-            className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl bg-gradient-to-r from-gcf-500 to-gcf-800 px-4 py-2 text-xs font-bold text-white transition hover:brightness-110"
+            className="inline-flex h-9 items-center gap-1.5 rounded-sm bg-blue-700 px-4 text-xs font-bold text-white transition hover:bg-blue-800"
           >
-            <Check className="h-4 w-4" aria-hidden="true" />
-            <span>{pinSaved ? '¡PIN Actualizado!' : 'Guardar PIN'}</span>
+            <Check className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>{pinSaved ? 'PIN Guardado' : 'Actualizar PIN'}</span>
           </button>
         </form>
       )}
 
-      {/* 1. TARJETAS RESUMEN DE KPIs */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {/* 1. TARJETAS RESUMEN DE KPIs (ESTILO FINANCIERO SOBRIO) */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {/* Card 1: Total Tickets Activos */}
-        <div className="rounded-2xl border border-gcf-500/25 bg-slate-900/80 p-5 shadow-md">
+        <div className="rounded-md border border-slate-200 bg-white p-4 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
               Total Tickets Activos
             </span>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gcf-500/15 text-gcf-300 ring-1 ring-gcf-500/30">
-              <Activity className="h-5 w-5" aria-hidden="true" />
-            </div>
+            <Activity className="h-4 w-4 text-blue-700" aria-hidden="true" />
           </div>
-          <div className="mt-3 flex items-baseline gap-2.5">
-            <span className="font-mono text-3xl font-black text-white">
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="font-mono text-2xl font-bold text-slate-900">
               {ticketsActivos.length}
             </span>
-            <span className="text-xs font-medium text-slate-400">
+            <span className="text-xs text-slate-500">
               de {tickets.length} registrados
             </span>
           </div>
-          <div className="mt-3 flex items-center gap-2 text-xs">
-            <span className="inline-flex items-center gap-1 rounded-md bg-rose-500/15 px-2 py-0.5 font-bold text-rose-300 ring-1 ring-rose-500/30">
-              <Flame className="h-3 w-3" aria-hidden="true" />
+          <div className="mt-2.5 border-t border-slate-100 pt-2 text-xs">
+            <span className="inline-flex items-center gap-1 rounded-sm border border-red-200 bg-red-50 px-2 py-0.5 font-bold text-red-800">
+              <Flame className="h-3 w-3 text-red-600" aria-hidden="true" />
               {ticketsCriticosActivos.length} Críticos (P1/P2)
             </span>
           </div>
         </div>
 
         {/* Card 2: Tickets Resueltos en la Semana */}
-        <div className="rounded-2xl border border-gcf-500/25 bg-slate-900/80 p-5 shadow-md">
+        <div className="rounded-md border border-slate-200 bg-white p-4 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
               Resueltos en la Semana
             </span>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/30">
-              <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
-            </div>
+            <CheckCircle2 className="h-4 w-4 text-emerald-700" aria-hidden="true" />
           </div>
-          <div className="mt-3 flex items-baseline gap-2.5">
-            <span className="font-mono text-3xl font-black text-emerald-400">
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="font-mono text-2xl font-bold text-emerald-700">
               {ticketsResueltosSemana.length}
             </span>
-            <span className="text-xs font-medium text-slate-400">
+            <span className="text-xs text-slate-500">
               últimos 7 días ({ticketsResueltosTotal.length} histórico)
             </span>
           </div>
-          <div className="mt-3 text-xs text-slate-300">
-            Tasa de resolución global:{' '}
-            <strong className="text-emerald-300">
+          <div className="mt-2.5 border-t border-slate-100 pt-2 text-xs text-slate-600">
+            Efectividad de cierre:{' '}
+            <strong className="font-mono text-slate-900">
               {tickets.length > 0
                 ? Math.round((ticketsResueltosTotal.length / tickets.length) * 100)
                 : 0}
@@ -315,77 +327,162 @@ export const DashboardKPIsView: React.FC<DashboardKPIsViewProps> = ({
         </div>
 
         {/* Card 3: Tareas Bloqueadas por Terceros */}
-        <div className="rounded-2xl border border-gcf-500/25 bg-slate-900/80 p-5 shadow-md">
+        <div className="rounded-md border border-slate-200 bg-white p-4 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
               Bloqueadas por Terceros
             </span>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/30">
-              <AlertOctagon className="h-5 w-5" aria-hidden="true" />
-            </div>
+            <AlertOctagon className="h-4 w-4 text-amber-600" aria-hidden="true" />
           </div>
-          <div className="mt-3 flex items-baseline gap-2.5">
-            <span className="font-mono text-3xl font-black text-amber-300">
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="font-mono text-2xl font-bold text-amber-700">
               {ticketsBloqueadosTerceros.length}
             </span>
-            <span className="text-xs font-medium text-slate-400">
-              esperando ISP / Proveedor
-            </span>
+            <span className="text-xs text-slate-500">esperando ISP / Proveedor</span>
           </div>
-          <div className="mt-3 text-xs">
+          <div className="mt-2.5 border-t border-slate-100 pt-2 text-xs">
             {ticketsBloqueadosMas48h.length > 0 ? (
-              <span className="inline-flex items-center gap-1 rounded-md bg-rose-500/20 px-2 py-0.5 font-bold text-rose-200 ring-1 ring-rose-500/40">
-                <Clock className="h-3 w-3" aria-hidden="true" />
-                {ticketsBloqueadosMas48h.length} supera(n) las 48 horas
+              <span className="inline-flex items-center gap-1 rounded-sm border border-red-300 bg-red-50 px-2 py-0.5 font-bold text-red-800">
+                <Clock className="h-3 w-3 text-red-600" aria-hidden="true" />
+                {ticketsBloqueadosMas48h.length} supera(n) 48 horas
               </span>
             ) : (
-              <span className="text-emerald-400">Sin retrasos mayores a 48h</span>
+              <span className="font-medium text-emerald-700">
+                Sin tickets estancados (&gt;48h)
+              </span>
             )}
           </div>
         </div>
 
         {/* Card 4: Carga Activa Odoo vs Infra vs BI */}
-        <div className="rounded-2xl border border-gcf-500/25 bg-slate-900/80 p-5 shadow-md">
+        <div className="rounded-md border border-slate-200 bg-white p-4 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-              Foco Odoo vs Infra vs BI
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+              Carga: Odoo vs Infra vs BI
             </span>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gcf-500/15 text-gcf-300 ring-1 ring-gcf-500/30">
-              <Layers className="h-5 w-5" aria-hidden="true" />
-            </div>
+            <Layers className="h-4 w-4 text-blue-700" aria-hidden="true" />
           </div>
-          <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-            <div className="rounded-xl border border-gcf-500/25 bg-gcf-950/70 p-2">
-              <span className="block font-mono text-lg font-black text-gcf-300">
+          <div className="mt-2.5 grid grid-cols-3 gap-2 text-center">
+            <div className="rounded-sm border border-slate-200 bg-slate-50 p-1.5">
+              <span className="block font-mono text-base font-bold text-slate-900">
                 {countOdoo}
               </span>
-              <span className="text-[10px] font-semibold text-slate-400">Odoo / TPV</span>
+              <span className="text-[10px] font-semibold text-slate-600">Odoo / TPV</span>
             </div>
-            <div className="rounded-xl border border-gcf-500/25 bg-gcf-950/70 p-2">
-              <span className="block font-mono text-lg font-black text-amber-400">
+            <div className="rounded-sm border border-slate-200 bg-slate-50 p-1.5">
+              <span className="block font-mono text-base font-bold text-slate-900">
                 {countInfra}
               </span>
-              <span className="text-[10px] font-semibold text-slate-400">Infra / Red</span>
+              <span className="text-[10px] font-semibold text-slate-600">Infra / Red</span>
             </div>
-            <div className="rounded-xl border border-gcf-500/25 bg-gcf-950/70 p-2">
-              <span className="block font-mono text-lg font-black text-gcf-100">
+            <div className="rounded-sm border border-slate-200 bg-slate-50 p-1.5">
+              <span className="block font-mono text-base font-bold text-slate-900">
                 {countBI}
               </span>
-              <span className="text-[10px] font-semibold text-slate-400">BI / Datos</span>
+              <span className="text-[10px] font-semibold text-slate-600">BI / Datos</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* 2. DESGLOSE GRÁFICO POR CATEGORÍA (CON ICONOS SVG) Y POR ESPECIALISTA */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Carga por Categoría */}
-        <section className="rounded-2xl border border-gcf-500/20 bg-slate-900/75 p-5">
-          <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-200">
-            <Layers className="h-4 w-4 text-gcf-400" aria-hidden="true" />
-            <span>Distribución de Carga por Categoría TI/BI</span>
-          </h3>
-          <div className="mt-4 space-y-3.5">
+      {/* 2. DESGLOSE EJECUTIVO: PERSONAL BI/TI (4 INTEGRANTES) Y CATEGORÍAS */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+        {/* Tabla Financiera/Ejecutiva de Carga de los 4 Integrantes BI/TI */}
+        <section className="rounded-md border border-slate-200 bg-white p-4 shadow-xs lg:col-span-7">
+          <div className="mb-3 flex items-center justify-between border-b border-slate-200 pb-2">
+            <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-800">
+              <Users className="h-4 w-4 text-blue-700" aria-hidden="true" />
+              <span>Matriz de Carga Operativa por Personal BI/TI</span>
+            </h3>
+            <span className="text-[11px] font-medium text-slate-500">
+              4 Integrantes Oficiales
+            </span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-left text-xs">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50 text-[11px] font-bold uppercase text-slate-600">
+                  <th className="px-3 py-2">Integrante / Cargo</th>
+                  <th className="px-2.5 py-2 text-center">En Progreso</th>
+                  <th className="px-2.5 py-2 text-center">En Cola / Triage</th>
+                  <th className="px-2.5 py-2 text-center">Espera 3ros</th>
+                  <th className="px-2.5 py-2 text-center">Resueltos</th>
+                  <th className="px-2.5 py-2 text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {EQUIPO_TI_BI.map((miembro) => {
+                  const [nombrePersona, cargoPersona] = miembro.split(' - ');
+                  const delMiembro = tickets.filter((t) => t.asignado_a === miembro);
+                  const enProgreso = delMiembro.filter(
+                    (t) => t.estado === 'En Progreso'
+                  ).length;
+                  const enCola = delMiembro.filter(
+                    (t) =>
+                      t.estado === 'Bandeja de Entrada' || t.estado === 'En Cola'
+                  ).length;
+                  const enEspera = delMiembro.filter(
+                    (t) => t.estado === 'Esperando Proveedor/Tercero'
+                  ).length;
+                  const resueltos = delMiembro.filter(
+                    (t) => t.estado === 'Resuelto'
+                  ).length;
+
+                  return (
+                    <tr key={miembro} className="hover:bg-slate-50">
+                      <td className="px-3 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <SpecialistBadge nombre={miembro} size="md" />
+                          <div>
+                            <div className="font-bold text-slate-900">{nombrePersona}</div>
+                            <div className="text-[11px] text-slate-500">{cargoPersona}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-2.5 py-2.5 text-center font-mono">
+                        <span
+                          className={`inline-block rounded-sm px-2 py-0.5 font-bold ${
+                            enProgreso > 3
+                              ? 'bg-red-100 text-red-800 border border-red-300'
+                              : enProgreso > 0
+                              ? 'bg-blue-50 text-blue-800 border border-blue-200'
+                              : 'text-slate-500'
+                          }`}
+                        >
+                          {enProgreso}
+                        </span>
+                      </td>
+                      <td className="px-2.5 py-2.5 text-center font-mono font-semibold text-slate-700">
+                        {enCola}
+                      </td>
+                      <td className="px-2.5 py-2.5 text-center font-mono font-semibold text-amber-700">
+                        {enEspera}
+                      </td>
+                      <td className="px-2.5 py-2.5 text-center font-mono font-semibold text-emerald-700">
+                        {resueltos}
+                      </td>
+                      <td className="px-2.5 py-2.5 text-right font-mono font-bold text-slate-900">
+                        {delMiembro.length}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {/* Distribución por Categoría */}
+        <section className="rounded-md border border-slate-200 bg-white p-4 shadow-xs lg:col-span-5">
+          <div className="mb-3 flex items-center justify-between border-b border-slate-200 pb-2">
+            <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-800">
+              <Layers className="h-4 w-4 text-blue-700" aria-hidden="true" />
+              <span>Distribución por Categoría de Servicio</span>
+            </h3>
+          </div>
+
+          <div className="space-y-3">
             {CATEGORIAS_TICKET.map((cat) => {
               const todosCat = tickets.filter((t) => t.categoria === cat);
               const activosCat = todosCat.filter((t) => t.estado !== 'Resuelto');
@@ -396,83 +493,23 @@ export const DashboardKPIsView: React.FC<DashboardKPIsViewProps> = ({
                   : 0;
 
               return (
-                <div key={cat} className="space-y-1.5">
+                <div key={cat} className="space-y-1">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="flex items-center gap-2 font-semibold text-slate-200">
-                      <CategorySvgIcon categoria={cat} className="h-4 w-4 shrink-0" />
-                      <span>{cat}</span>
-                    </span>
-                    <div className="flex items-center gap-2 font-mono text-[11px]">
-                      <span className="text-gcf-200">{activosCat.length} activos</span>
-                      <span className="text-slate-600">|</span>
-                      <span className="text-emerald-400">
-                        {resueltosCat.length} resueltos
+                    <span className="font-semibold text-slate-800">{cat}</span>
+                    <div className="flex items-center gap-1.5 font-mono text-[11px]">
+                      <span className="font-bold text-blue-700">
+                        {activosCat.length} act.
                       </span>
-                      <span className="text-slate-400">({pct}%)</span>
+                      <span className="text-slate-300">|</span>
+                      <span className="text-emerald-700">{resueltosCat.length} res.</span>
+                      <span className="text-slate-500">({pct}%)</span>
                     </div>
                   </div>
-                  <div className="h-2.5 w-full overflow-hidden rounded-full bg-gcf-950">
+                  <div className="h-2 w-full overflow-hidden rounded-sm bg-slate-100 border border-slate-200">
                     <div
-                      className="h-full rounded-full bg-gradient-to-r from-gcf-500 via-gcf-800 to-gcf-300 transition-all duration-300"
-                      style={{ width: `${Math.max(pct, todosCat.length > 0 ? 6 : 0)}%` }}
+                      className="h-full bg-blue-700 transition-all duration-300"
+                      style={{ width: `${Math.max(pct, todosCat.length > 0 ? 4 : 0)}%` }}
                     />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* Carga por Especialista con Avatares SVG */}
-        <section className="rounded-2xl border border-gcf-500/20 bg-slate-900/75 p-5">
-          <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-200">
-            <Users className="h-4 w-4 text-gcf-400" aria-hidden="true" />
-            <span>Carga Asignada por Especialista TI/BI</span>
-          </h3>
-          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {EQUIPO_TI_BI.map((miembro) => {
-              const delMiembro = tickets.filter((t) => t.asignado_a === miembro);
-              const enCurso = delMiembro.filter((t) => t.estado === 'En Progreso').length;
-              const pendientes = delMiembro.filter(
-                (t) => t.estado !== 'Resuelto' && t.estado !== 'En Progreso'
-              ).length;
-              const resueltos = delMiembro.filter((t) => t.estado === 'Resuelto').length;
-
-              return (
-                <div
-                  key={miembro}
-                  className="flex flex-col justify-between rounded-xl border border-gcf-500/20 bg-gcf-950/60 p-3.5"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <SpecialistAvatarSvg nombre={miembro} size="md" />
-                      <span className="text-xs font-bold text-white">{miembro}</span>
-                    </div>
-                    <span className="rounded-full border border-gcf-500/30 bg-slate-900 px-2 py-0.5 font-mono text-[11px] font-bold text-gcf-200">
-                      {delMiembro.length} total
-                    </span>
-                  </div>
-                  <div className="mt-2.5 flex items-center justify-between text-[11px] text-slate-400">
-                    <span>
-                      En Progreso:{' '}
-                      <strong
-                        className={
-                          enCurso > 3
-                            ? 'text-rose-400'
-                            : enCurso > 0
-                            ? 'text-amber-300'
-                            : 'text-slate-300'
-                        }
-                      >
-                        {enCurso}
-                      </strong>
-                    </span>
-                    <span>
-                      Cola/Espera: <strong className="text-gcf-200">{pendientes}</strong>
-                    </span>
-                    <span>
-                      Resueltos: <strong className="text-emerald-400">{resueltos}</strong>
-                    </span>
                   </div>
                 </div>
               );
@@ -481,21 +518,21 @@ export const DashboardKPIsView: React.FC<DashboardKPIsViewProps> = ({
         </section>
       </div>
 
-      {/* 3. TABLA DE HISTORIAL Y REPORTE DE GESTIÓN */}
-      <section className="rounded-2xl border border-gcf-500/20 bg-slate-900/80 p-5">
-        <div className="mb-4 flex flex-col justify-between gap-3 lg:flex-row lg:items-center">
+      {/* 3. TABLA DE HISTORIAL Y AUDITORÍA DE TICKETS */}
+      <section className="rounded-md border border-slate-200 bg-white p-4 shadow-xs">
+        <div className="mb-3 flex flex-col justify-between gap-3 border-b border-slate-200 pb-3 xl:flex-row xl:items-center">
           <div>
-            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-200">
-              Bitácora General de Requerimientos (Haz clic en una fila para editar)
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+              Registro Maestro de Requerimientos (Clic en cualquier fila para abrir ficha)
             </h3>
-            <p className="text-xs text-slate-400">
-              Filtra los registros antes de presionar &ldquo;Exportar Historial a Excel /
-              CSV&rdquo;.
+            <p className="text-[11px] text-slate-500">
+              Filtre por estado, categoría, departamento, sede comercial o responsable antes
+              de exportar a Excel/CSV.
             </p>
           </div>
 
-          <search className="flex flex-wrap items-center gap-2.5">
-            <Filter className="h-4 w-4 text-gcf-400" aria-hidden="true" />
+          <search className="flex flex-wrap items-center gap-2">
+            <Filter className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
 
             <div>
               <label htmlFor={filterEstadoId} className="sr-only">
@@ -505,7 +542,7 @@ export const DashboardKPIsView: React.FC<DashboardKPIsViewProps> = ({
                 id={filterEstadoId}
                 value={filtroEstado}
                 onChange={(e) => setFiltroEstado(e.target.value)}
-                className="min-h-[38px] rounded-xl border border-slate-700 bg-gcf-950 px-3 py-1.5 text-xs font-semibold text-slate-200"
+                className="h-8 rounded-sm border border-slate-300 bg-white px-2 text-xs font-medium text-slate-800"
               >
                 <option value="TODOS">Todos los Estados</option>
                 {ESTADOS_TICKET.map((st) => (
@@ -524,12 +561,50 @@ export const DashboardKPIsView: React.FC<DashboardKPIsViewProps> = ({
                 id={filterCatId}
                 value={filtroCategoria}
                 onChange={(e) => setFiltroCategoria(e.target.value)}
-                className="min-h-[38px] rounded-xl border border-slate-700 bg-gcf-950 px-3 py-1.5 text-xs font-semibold text-slate-200"
+                className="h-8 rounded-sm border border-slate-300 bg-white px-2 text-xs font-medium text-slate-800"
               >
                 <option value="TODAS">Todas las Categorías</option>
                 {CATEGORIAS_TICKET.map((cat) => (
                   <option key={cat} value={cat}>
                     {cat}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor={filterDeptoId} className="sr-only">
+                Filtrar por departamento
+              </label>
+              <select
+                id={filterDeptoId}
+                value={filtroDepartamento}
+                onChange={(e) => setFiltroDepartamento(e.target.value)}
+                className="h-8 rounded-sm border border-slate-300 bg-white px-2 text-xs font-medium text-slate-800"
+              >
+                <option value="TODOS">Todos los Departamentos</option>
+                {CATALOGO_DEPARTAMENTOS.map((dep) => (
+                  <option key={dep} value={dep}>
+                    {dep}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor={filterSedeId} className="sr-only">
+                Filtrar por sede comercial
+              </label>
+              <select
+                id={filterSedeId}
+                value={filtroSede}
+                onChange={(e) => setFiltroSede(e.target.value)}
+                className="h-8 max-w-[180px] rounded-sm border border-slate-300 bg-white px-2 text-xs font-medium text-slate-800"
+              >
+                <option value="TODAS">Todas las Sedes / Tiendas</option>
+                {CATALOGO_SEDES_DETALLE.map((s) => (
+                  <option key={s.valor} value={s.valor}>
+                    {s.nombreCorto}
                   </option>
                 ))}
               </select>
@@ -543,9 +618,9 @@ export const DashboardKPIsView: React.FC<DashboardKPIsViewProps> = ({
                 id={filterAsignadoId}
                 value={filtroAsignado}
                 onChange={(e) => setFiltroAsignado(e.target.value)}
-                className="min-h-[38px] rounded-xl border border-slate-700 bg-gcf-950 px-3 py-1.5 text-xs font-semibold text-slate-200"
+                className="h-8 max-w-[195px] rounded-sm border border-slate-300 bg-white px-2 text-xs font-medium text-slate-800"
               >
-                <option value="TODOS">Todos los Especialistas</option>
+                <option value="TODOS">Todo el Equipo BI/TI</option>
                 {EQUIPO_TI_BI.map((m) => (
                   <option key={m} value={m}>
                     {m}
@@ -556,86 +631,90 @@ export const DashboardKPIsView: React.FC<DashboardKPIsViewProps> = ({
           </search>
         </div>
 
-        <div className="overflow-x-auto rounded-xl border border-slate-800">
+        <div className="overflow-x-auto rounded-sm border border-slate-200">
           <table className="w-full border-collapse text-left text-xs">
             <thead>
-              <tr className="border-b border-slate-800 bg-gcf-950/95 text-[11px] font-bold uppercase tracking-wider text-gcf-200">
-                <th className="px-3.5 py-3">Código</th>
-                <th className="px-3.5 py-3">Prioridad</th>
-                <th className="px-3.5 py-3">Requerimiento</th>
-                <th className="px-3.5 py-3">Categoría</th>
-                <th className="px-3.5 py-3">Solicitante / Sede</th>
-                <th className="px-3.5 py-3">Estado</th>
-                <th className="px-3.5 py-3">Asignado a</th>
-                <th className="px-3.5 py-3">Fecha</th>
+              <tr className="border-b border-slate-200 bg-slate-50 text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                <th className="px-3 py-2.5">Código</th>
+                <th className="px-3 py-2.5">Prioridad</th>
+                <th className="px-3 py-2.5">Asunto / Requerimiento</th>
+                <th className="px-3 py-2.5">Categoría</th>
+                <th className="px-3 py-2.5">Departamento / Sede</th>
+                <th className="px-3 py-2.5">Solicitante</th>
+                <th className="px-3 py-2.5">Estado</th>
+                <th className="px-3 py-2.5">Asignado a</th>
+                <th className="px-3 py-2.5">Fecha</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/70 bg-slate-900/40">
+            <tbody className="divide-y divide-slate-200 bg-white">
               {historialFiltrado.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
-                    No hay tickets que coincidan con los filtros seleccionados.
+                  <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
+                    No existen registros que coincidan con los criterios de filtrado.
                   </td>
                 </tr>
               ) : (
                 historialFiltrado.map((t) => {
                   const meta = getPrioridadMeta(t.score_prioridad);
                   const estancado = estaEstancadoProveedor(t);
+                  const ubic = parseUbicacion(t.departamento_tienda);
                   return (
                     <tr
                       key={t.id}
                       onClick={() => setSelectedTicket(t)}
-                      className="cursor-pointer transition hover:bg-gcf-500/10"
+                      className="cursor-pointer transition hover:bg-slate-50"
                     >
-                      <td className="whitespace-nowrap px-3.5 py-3 font-mono font-bold text-gcf-300">
+                      <td className="whitespace-nowrap px-3 py-2.5 font-mono font-bold text-blue-700">
                         {formatCodigoTicket(t.codigo_ticket)}
                       </td>
-                      <td className="whitespace-nowrap px-3.5 py-3">
+                      <td className="whitespace-nowrap px-3 py-2.5">
                         <span
-                          className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold ${meta.badgeClass}`}
+                          className={`inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[10px] font-bold ${meta.badgeClass}`}
                         >
-                          Score {t.score_prioridad} ({meta.nivel})
+                          Score {t.score_prioridad} • {meta.nivel}
                         </span>
                       </td>
-                      <td className="max-w-xs px-3.5 py-3 font-semibold text-slate-100">
+                      <td className="max-w-xs px-3 py-2.5 font-semibold text-slate-900">
                         <div className="line-clamp-1">{t.titulo}</div>
                         {t.notas_tecnicas && (
-                          <div className="mt-0.5 line-clamp-1 text-[10px] font-normal text-slate-400">
+                          <div className="mt-0.5 line-clamp-1 text-[10px] font-normal text-slate-500">
                             Nota: {t.notas_tecnicas}
                           </div>
                         )}
                       </td>
-                      <td className="whitespace-nowrap px-3.5 py-3 text-slate-300">
-                        <div className="inline-flex items-center gap-1.5">
-                          <CategorySvgIcon categoria={t.categoria} className="h-4 w-4 shrink-0" />
-                          <span>{t.categoria}</span>
-                        </div>
+                      <td className="whitespace-nowrap px-3 py-2.5 text-slate-700">
+                        {t.categoria}
                       </td>
-                      <td className="px-3.5 py-3 text-slate-300">
-                        <div className="font-medium text-slate-200">
-                          {t.solicitante_nombre}
+                      <td className="px-3 py-2.5">
+                        <div className="font-semibold text-slate-800">
+                          {ubic.departamento}
                         </div>
-                        <div className="text-[10px] text-slate-400">
-                          {t.departamento_tienda}
-                        </div>
+                        {ubic.sede !== 'N/A (Oficina / No aplica)' && (
+                          <div className="text-[10px] text-slate-500">{ubic.sede}</div>
+                        )}
                       </td>
-                      <td className="whitespace-nowrap px-3.5 py-3">
-                        <span className="rounded-lg border border-gcf-500/30 bg-gcf-950 px-2 py-1 text-[11px] font-semibold text-gcf-100">
+                      <td className="whitespace-nowrap px-3 py-2.5 font-medium text-slate-800">
+                        {t.solicitante_nombre}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2.5">
+                        <span className="rounded-sm border border-slate-300 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-800">
                           {t.estado}
                         </span>
                         {estancado && (
-                          <span className="ml-1.5 inline-block rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-bold text-amber-300">
+                          <span className="ml-1 inline-block rounded-sm border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
                             &gt;48h
                           </span>
                         )}
                       </td>
-                      <td className="whitespace-nowrap px-3.5 py-3 font-medium text-slate-200">
+                      <td className="whitespace-nowrap px-3 py-2.5 text-slate-800">
                         <div className="inline-flex items-center gap-1.5">
-                          <SpecialistAvatarSvg nombre={t.asignado_a} size="sm" />
-                          <span>{t.asignado_a}</span>
+                          <SpecialistBadge nombre={t.asignado_a} size="sm" />
+                          <span className="font-medium">
+                            {t.asignado_a.split(' - ')[0]}
+                          </span>
                         </div>
                       </td>
-                      <td className="whitespace-nowrap px-3.5 py-3 text-slate-400">
+                      <td className="whitespace-nowrap px-3 py-2.5 text-slate-500">
                         {new Date(t.created_at).toLocaleDateString('es-VE', {
                           day: '2-digit',
                           month: 'short',

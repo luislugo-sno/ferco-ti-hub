@@ -108,7 +108,7 @@ export const PinAuthDialog: React.FC<PinAuthDialogProps> = ({
       }
       onSuccess();
     } else {
-      setError('PIN incorrecto. Verifica el código de acceso de la Gerencia TI/BI.');
+      setError('PIN incorrecto. Verifique la credencial de acceso de la Gerencia BI/TI.');
       inputRef.current?.focus();
     }
   };
@@ -119,19 +119,19 @@ export const PinAuthDialog: React.FC<PinAuthDialogProps> = ({
       aria-labelledby={titleId}
       aria-describedby={descId}
       {...({ closedby: 'any' } as React.DialogHTMLAttributes<HTMLDialogElement>)}
-      className="m-auto w-full max-w-md rounded-2xl border border-gcf-500/35 bg-slate-900 p-0 text-slate-100 shadow-2xl shadow-black/80 open:flex open:flex-col"
+      className="m-auto w-full max-w-md rounded-md border border-slate-300 bg-white p-0 text-slate-900 shadow-lg open:flex open:flex-col"
     >
-      <div className="flex items-center justify-between border-b border-slate-800 px-6 py-4">
+      <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-3.5">
         <div className="flex items-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gcf-500/20 text-gcf-300 ring-1 ring-gcf-400/40">
-            <LockKeyhole className="h-5 w-5" aria-hidden="true" />
+          <div className="flex h-8 w-8 items-center justify-center rounded-sm border border-blue-200 bg-blue-50 text-blue-700">
+            <LockKeyhole className="h-4 w-4" aria-hidden="true" />
           </div>
           <div>
-            <h2 id={titleId} className="text-base font-bold text-white">
-              Acceso Restringido TI/BI
+            <h2 id={titleId} className="text-sm font-bold text-slate-900">
+              Control de Acceso Operativo BI/TI
             </h2>
-            <p className="text-xs text-slate-400">
-              Módulo: <span className="font-medium text-gcf-200">{targetName}</span>
+            <p className="text-[11px] text-slate-600">
+              Módulo solicitado: <span className="font-semibold text-blue-700">{targetName}</span>
             </p>
           </div>
         </div>
@@ -140,31 +140,31 @@ export const PinAuthDialog: React.FC<PinAuthDialogProps> = ({
           type="button"
           onClick={() => dialogRef.current?.close()}
           aria-label="Cerrar ventana de autenticación"
-          className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-800 hover:text-white"
+          className="rounded-sm p-1 text-slate-500 transition hover:bg-slate-200 hover:text-slate-900"
         >
-          <X className="h-5 w-5" aria-hidden="true" />
+          <X className="h-4 w-4" aria-hidden="true" />
         </button>
       </div>
 
-      <form onSubmit={handleSubmit} method="post" className="space-y-4 p-6">
-        <p id={descId} className="text-xs leading-relaxed text-slate-300">
-          Ingresa el PIN de seguridad del equipo de la{' '}
-          <strong className="text-white">
+      <form onSubmit={handleSubmit} method="post" className="space-y-4 p-5">
+        <p id={descId} className="text-xs leading-relaxed text-slate-600">
+          Ingrese el PIN de autorización de la{' '}
+          <strong className="text-slate-900">
             Gerencia de Inteligencia de Negocios y Tecnología
           </strong>{' '}
-          para gestionar la cola operativa y visualizar indicadores.
+          para acceder a la gestión de cola e indicadores.
         </p>
 
-        <div className="space-y-1.5">
+        <div className="space-y-1">
           <label
             htmlFor={pinInputId}
-            className="block text-xs font-semibold uppercase tracking-wider text-slate-300"
+            className="block text-xs font-bold uppercase tracking-wider text-slate-700"
           >
-            PIN de Autorización <span aria-hidden="true" className="text-rose-400">*</span>
+            PIN de Seguridad <span aria-hidden="true" className="text-red-600">*</span>
           </label>
           <div className="relative flex items-center">
             <KeyRound
-              className="pointer-events-none absolute left-3.5 h-4 w-4 text-gcf-300"
+              className="pointer-events-none absolute left-3 h-4 w-4 text-slate-400"
               aria-hidden="true"
             />
             <input
@@ -186,15 +186,15 @@ export const PinAuthDialog: React.FC<PinAuthDialogProps> = ({
                 setPin(e.target.value);
                 if (error) setError('');
               }}
-              placeholder="Ingresa tu PIN (Ej: 1234)"
-              className="min-h-[48px] w-full rounded-xl border border-slate-700 bg-gcf-950 pl-10 pr-11 py-2.5 font-mono text-base tracking-widest text-white placeholder:font-sans placeholder:text-sm placeholder:tracking-normal placeholder:text-slate-500 focus:border-gcf-500 focus:outline-none focus:ring-2 focus:ring-gcf-500/30"
+              placeholder="PIN (Ej: 1234)"
+              className="h-10 w-full rounded-sm border border-slate-300 bg-white pl-9 pr-10 font-mono text-sm tracking-widest text-slate-900 placeholder:font-sans placeholder:text-xs placeholder:tracking-normal placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
             />
             <button
               type="button"
               aria-pressed={showPin}
               aria-label={showPin ? 'Ocultar PIN' : 'Mostrar PIN'}
               onClick={() => setShowPin((prev) => !prev)}
-              className="absolute right-2.5 rounded-lg p-2 text-slate-400 transition hover:bg-slate-800 hover:text-slate-200"
+              className="absolute right-2 rounded-sm p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
             >
               {showPin ? (
                 <EyeOff className="h-4 w-4" aria-hidden="true" />
@@ -203,10 +203,11 @@ export const PinAuthDialog: React.FC<PinAuthDialogProps> = ({
               )}
             </button>
           </div>
-          <p className="text-[11px] text-slate-400">
-            PIN predeterminado de configuración:{' '}
-            <code className="rounded bg-gcf-900/60 px-1.5 py-0.5 text-gcf-200">1234</code>{' '}
-            (configurable en <code className="text-slate-300">.env</code> o desde el panel de KPIs).
+          <p className="text-[11px] text-slate-500">
+            PIN predeterminado:{' '}
+            <code className="rounded-sm border border-slate-200 bg-slate-100 px-1 py-0.5 font-mono text-slate-800">
+              1234
+            </code>
           </p>
         </div>
 
@@ -214,27 +215,27 @@ export const PinAuthDialog: React.FC<PinAuthDialogProps> = ({
           {error && (
             <div
               id={errorId}
-              className="flex items-center gap-2 rounded-xl border border-rose-500/40 bg-rose-500/10 px-3.5 py-2.5 text-xs font-medium text-rose-200"
+              className="flex items-center gap-2 rounded-sm border border-red-300 bg-red-50 px-3 py-2 text-xs font-medium text-red-800"
             >
-              <ShieldAlert className="h-4 w-4 shrink-0 text-rose-400" aria-hidden="true" />
+              <ShieldAlert className="h-4 w-4 shrink-0 text-red-600" aria-hidden="true" />
               <span>{error}</span>
             </div>
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-2.5 pt-2">
+        <div className="flex items-center justify-end gap-2 border-t border-slate-200 pt-3">
           <button
             type="button"
             onClick={() => dialogRef.current?.close()}
-            className="rounded-xl border border-slate-700 bg-slate-800/70 px-4 py-2.5 text-xs font-semibold text-slate-300 transition hover:bg-slate-800 hover:text-white"
+            className="rounded-sm border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
           >
             Cancelar
           </button>
           <button
             type="submit"
-            className="rounded-xl bg-gradient-to-r from-gcf-500 to-gcf-800 px-5 py-2.5 text-xs font-bold text-white shadow-gcf-glow transition hover:brightness-110"
+            className="rounded-sm bg-blue-700 px-4 py-2 text-xs font-bold text-white transition hover:bg-blue-800"
           >
-            Desbloquear Acceso
+            Autorizar Acceso
           </button>
         </div>
       </form>

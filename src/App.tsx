@@ -90,8 +90,8 @@ export const App: React.FC = () => {
       tab === 'solicitar'
         ? '/solicitar'
         : tab === 'comando'
-        ? '/comando'
-        : '/metricas';
+          ? '/comando'
+          : '/metricas';
     if (window.location.pathname !== nextPath) {
       window.history.pushState({}, '', nextPath);
     }
@@ -134,6 +134,7 @@ export const App: React.FC = () => {
         | 'categoria'
         | 'titulo'
         | 'descripcion'
+        | 'departamento_tienda'
       >
     >
   ) => {
@@ -148,7 +149,7 @@ export const App: React.FC = () => {
   ).length;
 
   return (
-    <div className="min-h-screen flex flex-col bg-gcf-950 text-slate-100">
+    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
       <HeaderInstitucional
         activeTab={activeTab}
         onSelectTab={navigateToTab}
@@ -162,8 +163,8 @@ export const App: React.FC = () => {
       <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-5 sm:px-6 lg:px-8">
         {isLoading ? (
           <div className="flex h-64 items-center justify-center">
-            <div className="flex items-center gap-3 text-sm font-semibold text-gcf-200">
-              <span className="h-3 w-3 animate-ping rounded-full bg-gcf-400" />
+            <div className="flex items-center gap-2.5 text-xs font-semibold uppercase tracking-wider text-slate-600">
+              <span className="h-2.5 w-2.5 rounded-sm bg-blue-700" />
               <span>Cargando Hub Operativo TI/BI...</span>
             </div>
           </div>
@@ -183,14 +184,14 @@ export const App: React.FC = () => {
         )}
       </main>
 
-      <footer className="border-t border-gcf-500/20 bg-gcf-950/95 py-3.5 text-center text-xs text-slate-400">
+      <footer className="border-t border-slate-200 bg-white py-3 text-center text-xs text-slate-500">
         <div className="mx-auto flex max-w-[1600px] flex-col items-center justify-between gap-2 px-4 sm:flex-row sm:px-6 lg:px-8">
-          <span>
+          <span className="font-medium text-slate-600">
             Grupo Comercializadora Ferco • Gerencia de Inteligencia de Negocios y
             Tecnología
           </span>
-          <span className="text-gcf-300/90">
-            Hub Operativo TI/BI (ITSM) • Matriz Impacto × Urgencia • WIP Limit Activo
+          <span className="text-slate-500">
+            Sistema ITSM • Matriz Impacto × Urgencia • Control WIP Limit Activo
           </span>
         </div>
       </footer>

@@ -39,14 +39,12 @@ CREATE TABLE IF NOT EXISTS public.tickets_ti (
       'Resuelto'
     )
   ),
-  asignado_a TEXT NOT NULL DEFAULT 'Luis Lugo' CHECK (
+  asignado_a TEXT NOT NULL DEFAULT 'Luis Lugo - Analista BI/TI' CHECK (
     asignado_a IN (
-      'Luis Lugo',
-      'Plinio Becerra',
-      'Leonardo Semprún',
-      'Cristina Núñez',
-      'Marinés González',
-      'Juan García'
+      'Luis Lugo - Analista BI/TI',
+      'Juan García - Gerente BI/TI',
+      'Leonardo Semprun - Especialista de Soluciones de Negocio',
+      'Plinio Becerra - Analista de Soluciones de Negocio'
     )
   ),
   notas_tecnicas TEXT DEFAULT '',

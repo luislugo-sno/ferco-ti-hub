@@ -11,11 +11,16 @@ import {
   Calendar,
   CheckCircle2,
   Layers,
+  MapPin,
 } from 'lucide-react';
 import {
   AsignadoA,
+  CATALOGO_DEPARTAMENTOS,
+  CATALOGO_SEDES_DETALLE,
   CATEGORIAS_TICKET,
   CategoriaTicket,
+  composeUbicacion,
+  DEFAULT_ASIGNADO,
   EQUIPO_TI_BI,
   ESTADOS_TICKET,
   EstadoTicket,
@@ -25,13 +30,10 @@ import {
   getPrioridadMeta,
   NivelImpacto,
   NivelUrgencia,
+  parseUbicacion,
   TicketTI,
 } from '../types/tickets';
-import {
-  CategorySvgIcon,
-  EstadoColumnaSvg,
-  SpecialistAvatarSvg,
-} from './BrandSvgElements';
+import { SpecialistBadge } from './BrandSvgElements';
 
 interface TicketModalDialogProps {
   ticket: TicketTI | null;
@@ -49,6 +51,7 @@ interface TicketModalDialogProps {
         | 'categoria'
         | 'titulo'
         | 'descripcion'
+        | 'departamento_tienda'
       >
     >
   ) => Promise<void>;
@@ -65,10 +68,14 @@ export const TicketModalDialog: React.FC<TicketModalDialogProps> = ({
   const notasId = useId();
   const asignadoId = useId();
   const categoriaId = useId();
+  const deptoEditId = useId();
+  const sedeEditId = useId();
 
   const [estado, setEstado] = useState<EstadoTicket>('Bandeja de Entrada');
-  const [asignadoA, setAsignadoA] = useState<AsignadoA>('Luis Lugo');
+  const [asignadoA, setAsignadoA] = useState<AsignadoA>(DEFAULT_ASIGNADO);
   const [categoria, setCategoria] = useState<CategoriaTicket>('Odoo ERP / TPV Tiendas');
+  const [departamento, setDepartamento] = useState<string>('ADMINISTRACIÓN');
+  const [sedeComercial, setSedeComercial] = useState<string>('N/A (Oficina / No aplica)');
   const [impacto, setImpacto] = useState<NivelImpacto>(1);
   const [urgencia, setUrgencia] = useState<NivelUrgencia>(1);
   const [notasTecnicas, setNotasTecnicas] = useState('');
@@ -80,9 +87,12 @@ export const TicketModalDialog: React.FC<TicketModalDialogProps> = ({
     if (!dialog) return;
 
     if (ticket) {
+      const parsedUbic = parseUbicacion(ticket.departamento_tienda);
       setEstado(ticket.estado);
       setAsignadoA(ticket.asignado_a);
       setCategoria(ticket.categoria);
+      setDepartamento(parsedUbic.departamento);
+      setSedeComercial(parsedUbic.sede);
       setImpacto(ticket.impacto);
       setUrgencia(ticket.urgencia);
       setNotasTecnicas(ticket.notas_tecnicas || '');
@@ -163,6 +173,7 @@ export const TicketModalDialog: React.FC<TicketModalDialogProps> = ({
         estado: nuevoEstado,
         asignado_a: asignadoA,
         categoria,
+        departamento_tienda: composeUbicacion(departamento, sedeComercial),
         impacto,
         urgencia,
         notas_tecnicas: notasTecnicas,
@@ -182,6 +193,7 @@ export const TicketModalDialog: React.FC<TicketModalDialogProps> = ({
         estado,
         asignado_a: asignadoA,
         categoria,
+        departamento_tienda: composeUbicacion(departamento, sedeComercial),
         impacto,
         urgencia,
         notas_tecnicas: notasTecnicas,
@@ -189,7 +201,7 @@ export const TicketModalDialog: React.FC<TicketModalDialogProps> = ({
       setSavedNotice(true);
       setTimeout(() => {
         dialogRef.current?.close();
-      }, 450);
+      }, 400);
     } finally {
       setIsSaving(false);
     }
@@ -200,29 +212,29 @@ export const TicketModalDialog: React.FC<TicketModalDialogProps> = ({
       ref={dialogRef}
       aria-labelledby={titleId}
       {...({ closedby: 'any' } as React.DialogHTMLAttributes<HTMLDialogElement>)}
-      className="m-auto w-full max-w-2xl rounded-2xl border border-gcf-500/35 bg-slate-900 p-0 text-slate-100 shadow-2xl shadow-black/80 open:flex open:flex-col max-h-[92vh]"
+      className="m-auto w-full max-w-2xl rounded-md border border-slate-300 bg-white p-0 text-slate-900 shadow-lg open:flex open:flex-col max-h-[92vh]"
     >
       {/* Cabecera del Modal */}
-      <div className="flex items-start justify-between gap-4 border-b border-slate-800 px-6 py-4">
+      <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-slate-50 px-5 py-3.5">
         <div className="space-y-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-lg bg-gcf-500/20 px-2.5 py-1 font-mono text-xs font-black text-gcf-200 ring-1 ring-gcf-400/40">
+            <span className="rounded-sm border border-blue-200 bg-blue-50 px-2 py-0.5 font-mono text-xs font-bold text-blue-800">
               {formatCodigoTicket(ticket.codigo_ticket)}
             </span>
             <span
-              className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold ${meta.badgeClass}`}
+              className={`inline-flex items-center gap-1.5 rounded-sm px-2 py-0.5 text-xs font-bold ${meta.badgeClass}`}
             >
-              <span className={`h-2 w-2 rounded-full ${meta.dotClass}`} />
+              <span className={`h-2 w-2 rounded-sm ${meta.dotClass}`} />
               Score {scorePreview} — {meta.codigoSLA}
             </span>
             {estancado && (
-              <span className="inline-flex items-center gap-1 rounded-lg border border-rose-500/50 bg-rose-500/20 px-2.5 py-1 text-xs font-bold text-rose-200">
-                <AlertOctagon className="h-3.5 w-3.5 text-rose-400" aria-hidden="true" />
+              <span className="inline-flex items-center gap-1 rounded-sm border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-900">
+                <AlertOctagon className="h-3.5 w-3.5 text-amber-700" aria-hidden="true" />
                 +{horasSinMovimiento}h esperando proveedor
               </span>
             )}
           </div>
-          <h2 id={titleId} className="text-base font-bold text-white sm:text-lg">
+          <h2 id={titleId} className="text-base font-bold text-slate-900">
             {ticket.titulo}
           </h2>
         </div>
@@ -231,76 +243,65 @@ export const TicketModalDialog: React.FC<TicketModalDialogProps> = ({
           type="button"
           onClick={() => dialogRef.current?.close()}
           aria-label="Cerrar ficha técnica del ticket"
-          className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-800 hover:text-white"
+          className="rounded-sm p-1 text-slate-500 transition hover:bg-slate-200 hover:text-slate-900"
         >
-          <X className="h-5 w-5" aria-hidden="true" />
+          <X className="h-4 w-4" aria-hidden="true" />
         </button>
       </div>
 
       {/* Cuerpo scrollable */}
       <form
         onSubmit={handleSaveAll}
-        className="flex-1 space-y-5 overflow-y-auto px-6 py-5"
+        className="flex-1 space-y-4 overflow-y-auto px-5 py-4"
       >
         {/* Metadatos del Solicitante */}
-        <div className="grid grid-cols-1 gap-3 rounded-xl border border-slate-800 bg-gcf-950/75 p-3.5 text-xs sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 rounded-sm border border-slate-200 bg-slate-50 p-3 text-xs sm:grid-cols-2">
           <div className="flex items-center gap-2">
-            <User className="h-4 w-4 shrink-0 text-gcf-400" aria-hidden="true" />
+            <User className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
             <div>
-              <span className="block text-[10px] uppercase text-slate-400">
+              <span className="block text-[10px] font-semibold uppercase text-slate-500">
                 Solicitante
               </span>
-              <span className="font-semibold text-slate-100">
+              <span className="font-semibold text-slate-900">
                 {ticket.solicitante_nombre}
               </span>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Building2 className="h-4 w-4 shrink-0 text-gcf-400" aria-hidden="true" />
+            <Calendar className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
             <div>
-              <span className="block text-[10px] uppercase text-slate-400">
-                Departamento / Tienda
+              <span className="block text-[10px] font-semibold uppercase text-slate-500">
+                Fecha Creación / Tiempo en Estado
               </span>
-              <span className="font-semibold text-slate-100">
-                {ticket.departamento_tienda}
-              </span>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Calendar className="h-4 w-4 shrink-0 text-gcf-400" aria-hidden="true" />
-            <div>
-              <span className="block text-[10px] uppercase text-slate-400">
-                Creado / Sin moverse
-              </span>
-              <span className="font-semibold text-slate-100">
+              <span className="font-semibold text-slate-900">
                 {new Date(ticket.created_at).toLocaleDateString('es-VE', {
                   day: '2-digit',
                   month: 'short',
                   hour: '2-digit',
                   minute: '2-digit',
                 })}{' '}
-                ({horasSinMovimiento}h)
+                ({horasSinMovimiento}h sin moverse)
               </span>
             </div>
           </div>
         </div>
 
         {/* Descripción Original */}
-        <div className="rounded-xl border border-slate-800/80 bg-gcf-950/40 p-3.5">
-          <span className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+        <div className="rounded-sm border border-slate-200 bg-white p-3">
+          <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-500">
             Descripción del Requerimiento
           </span>
-          <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-slate-200">
+          <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-slate-800">
             {ticket.descripcion || 'Sin descripción adicional registrada (Captura rápida).'}
           </p>
         </div>
 
-        {/* Cambio de Estado con 1 Clic e Icono SVG */}
+        {/* Cambio de Estado con 1 Clic */}
         <div>
-          <span className="mb-2 block text-xs font-bold uppercase tracking-wider text-gcf-300">
-            Cambiar Estado con 1 Clic
+          <span className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-700">
+            Cambiar Estado Operativo (1 Clic)
           </span>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-5">
             {ESTADOS_TICKET.map((st) => {
               const active = estado === st;
               return (
@@ -308,46 +309,92 @@ export const TicketModalDialog: React.FC<TicketModalDialogProps> = ({
                   key={st}
                   type="button"
                   onClick={() => handleQuickStateClick(st)}
-                  className={`flex flex-col items-center justify-center gap-1 rounded-xl border px-2.5 py-2 text-center text-xs font-semibold transition ${
+                  className={`rounded-sm border px-2 py-2 text-center text-xs font-semibold transition ${
                     active
                       ? st === 'Resuelto'
-                        ? 'border-emerald-500 bg-emerald-600/25 text-emerald-200 shadow-sm'
+                        ? 'border-emerald-700 bg-emerald-700 text-white'
                         : st === 'Esperando Proveedor/Tercero'
-                        ? 'border-amber-500 bg-amber-600/25 text-amber-200 shadow-sm'
-                        : 'border-gcf-400 bg-gradient-to-r from-gcf-500 to-gcf-800 text-white shadow-sm'
-                      : 'border-slate-800 bg-gcf-950/70 text-slate-400 hover:border-gcf-500/40 hover:text-slate-200'
+                        ? 'border-amber-600 bg-amber-600 text-white'
+                        : 'border-blue-700 bg-blue-700 text-white'
+                      : 'border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100'
                   }`}
                 >
-                  <EstadoColumnaSvg estado={st} className="h-4 w-4" />
-                  <span className="leading-tight">{st}</span>
+                  {st}
                 </button>
               );
             })}
           </div>
         </div>
 
-        {/* Asignación, Categoría y Recálculo de Matriz */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {/* Ubicación: Departamento y Sede Comercial */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label
+              htmlFor={deptoEditId}
+              className="mb-1 flex items-center gap-1 text-xs font-semibold text-slate-700"
+            >
+              <Building2 className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
+              <span>Departamento / Área</span>
+            </label>
+            <select
+              id={deptoEditId}
+              value={departamento}
+              onChange={(e) => setDepartamento(e.target.value)}
+              className="h-9 w-full rounded-sm border border-slate-300 bg-white px-2.5 text-xs text-slate-900 focus:border-blue-700 focus:outline-none"
+            >
+              {CATALOGO_DEPARTAMENTOS.map((dep) => (
+                <option key={dep} value={dep}>
+                  {dep}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label
+              htmlFor={sedeEditId}
+              className="mb-1 flex items-center gap-1 text-xs font-semibold text-slate-700"
+            >
+              <MapPin className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
+              <span>Sede Comercial / Centro</span>
+            </label>
+            <select
+              id={sedeEditId}
+              value={sedeComercial}
+              onChange={(e) => setSedeComercial(e.target.value)}
+              className="h-9 w-full rounded-sm border border-slate-300 bg-white px-2.5 text-xs text-slate-900 focus:border-blue-700 focus:outline-none"
+            >
+              {CATALOGO_SEDES_DETALLE.map((s) => (
+                <option key={s.valor} value={s.valor}>
+                  {s.valor}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Asignación (4 Integrantes BI/TI) y Categoría */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label
               htmlFor={asignadoId}
-              className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-300"
+              className="mb-1 flex items-center gap-1 text-xs font-semibold text-slate-700"
             >
-              <UserCheck className="h-3.5 w-3.5 text-gcf-400" aria-hidden="true" />
-              <span>Especialista Asignado</span>
+              <UserCheck className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
+              <span>Responsable BI/TI Asignado</span>
             </label>
             <div className="flex items-center gap-2">
-              <SpecialistAvatarSvg nombre={asignadoA} size="md" />
+              <SpecialistBadge nombre={asignadoA} size="md" />
               <select
                 id={asignadoId}
                 name="asignado_a"
                 value={asignadoA}
                 onChange={(e) => setAsignadoA(e.target.value as AsignadoA)}
-                className="min-h-[44px] flex-1 rounded-xl border border-slate-700 bg-gcf-950 px-3 py-2 text-sm text-white focus:border-gcf-500 focus:outline-none"
+                className="h-9 flex-1 rounded-sm border border-slate-300 bg-white px-2.5 text-xs text-slate-900 focus:border-blue-700 focus:outline-none"
               >
                 {EQUIPO_TI_BI.map((miembro) => (
                   <option key={miembro} value={miembro}>
-                    {miembro} {miembro === 'Luis Lugo' ? '(Líder / Default)' : ''}
+                    {miembro}
                   </option>
                 ))}
               </select>
@@ -357,46 +404,43 @@ export const TicketModalDialog: React.FC<TicketModalDialogProps> = ({
           <div>
             <label
               htmlFor={categoriaId}
-              className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-300"
+              className="mb-1 flex items-center gap-1 text-xs font-semibold text-slate-700"
             >
-              <Layers className="h-3.5 w-3.5 text-gcf-400" aria-hidden="true" />
-              <span>Categoría Técnica</span>
+              <Layers className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
+              <span>Categoría de Servicio</span>
             </label>
-            <div className="flex items-center gap-2">
-              <CategorySvgIcon categoria={categoria} className="h-6 w-6 shrink-0" />
-              <select
-                id={categoriaId}
-                name="categoria"
-                value={categoria}
-                onChange={(e) => setCategoria(e.target.value as CategoriaTicket)}
-                className="min-h-[44px] flex-1 rounded-xl border border-slate-700 bg-gcf-950 px-3 py-2 text-sm text-white focus:border-gcf-500 focus:outline-none"
-              >
-                {CATEGORIAS_TICKET.map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <select
+              id={categoriaId}
+              name="categoria"
+              value={categoria}
+              onChange={(e) => setCategoria(e.target.value as CategoriaTicket)}
+              className="h-9 w-full rounded-sm border border-slate-300 bg-white px-2.5 text-xs text-slate-900 focus:border-blue-700 focus:outline-none"
+            >
+              {CATEGORIAS_TICKET.map((cat) => (
+                <option key={cat} value={cat}>
+                  {cat}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
         {/* Ajuste rápido de Impacto x Urgencia en Triage */}
-        <div className="grid grid-cols-2 gap-4 rounded-xl border border-slate-800 bg-gcf-950/60 p-3.5">
+        <div className="grid grid-cols-2 gap-3 rounded-sm border border-slate-200 bg-slate-50 p-3">
           <div>
-            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+            <span className="mb-1 block text-[11px] font-bold uppercase tracking-wider text-slate-600">
               Ajustar Impacto (1–3)
             </span>
-            <div className="flex gap-2">
+            <div className="flex gap-1.5">
               {([1, 2, 3] as NivelImpacto[]).map((n) => (
                 <button
                   key={n}
                   type="button"
                   onClick={() => setImpacto(n)}
-                  className={`flex-1 rounded-lg border py-1.5 text-xs font-bold transition ${
+                  className={`flex-1 rounded-sm border py-1 text-xs font-bold transition ${
                     impacto === n
-                      ? 'border-gcf-400 bg-gcf-500/25 text-gcf-100'
-                      : 'border-slate-800 bg-slate-900 text-slate-400 hover:text-white'
+                      ? 'border-blue-700 bg-blue-700 text-white'
+                      : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
                   }`}
                 >
                   Impacto {n}
@@ -406,19 +450,19 @@ export const TicketModalDialog: React.FC<TicketModalDialogProps> = ({
           </div>
 
           <div>
-            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+            <span className="mb-1 block text-[11px] font-bold uppercase tracking-wider text-slate-600">
               Ajustar Urgencia (1–3)
             </span>
-            <div className="flex gap-2">
+            <div className="flex gap-1.5">
               {([1, 2, 3] as NivelUrgencia[]).map((n) => (
                 <button
                   key={n}
                   type="button"
                   onClick={() => setUrgencia(n)}
-                  className={`flex-1 rounded-lg border py-1.5 text-xs font-bold transition ${
+                  className={`flex-1 rounded-sm border py-1 text-xs font-bold transition ${
                     urgencia === n
-                      ? 'border-gcf-400 bg-gcf-500/25 text-gcf-100'
-                      : 'border-slate-800 bg-slate-900 text-slate-400 hover:text-white'
+                      ? 'border-blue-700 bg-blue-700 text-white'
+                      : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
                   }`}
                 >
                   Urgencia {n}
@@ -432,55 +476,55 @@ export const TicketModalDialog: React.FC<TicketModalDialogProps> = ({
         <div>
           <label
             htmlFor={notasId}
-            className="mb-1.5 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-gcf-300"
+            className="mb-1 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-700"
           >
-            <MessageSquareCode className="h-4 w-4 text-gcf-400" aria-hidden="true" />
+            <MessageSquareCode className="h-3.5 w-3.5 text-blue-700" aria-hidden="true" />
             <span>Bitácora / Notas Técnicas de Resolución o Proveedor</span>
           </label>
           <textarea
             ref={notasRef}
             id={notasId}
             name="notas_tecnicas"
-            rows={4}
+            rows={3}
             autoFocus
             value={notasTecnicas}
             onChange={(e) => setNotasTecnicas(e.target.value)}
-            placeholder="Documenta diagnósticos, número de ticket de ISP/Starlink, ajustes en Odoo, queries de BI o causa raíz..."
-            className="w-full rounded-xl border border-slate-700 bg-gcf-950 p-3.5 text-sm text-white placeholder:text-slate-500 focus:border-gcf-500 focus:outline-none focus:ring-2 focus:ring-gcf-500/30"
+            placeholder="Documente diagnóstico técnico, número de ticket con proveedor ISP/Odoo o solución aplicada..."
+            className="w-full rounded-sm border border-slate-300 bg-white p-2.5 text-xs text-slate-900 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
           />
         </div>
 
         {/* Pie del Modal */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-3">
           <div aria-live="polite" className="text-xs">
             {savedNotice ? (
-              <span className="inline-flex items-center gap-1.5 font-semibold text-emerald-400">
+              <span className="inline-flex items-center gap-1.5 font-semibold text-emerald-700">
                 <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-                Cambios guardados y sincronizados
+                Ficha actualizada correctamente
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1.5 text-slate-400">
+              <span className="inline-flex items-center gap-1 text-slate-500">
                 <Clock className="h-3.5 w-3.5" aria-hidden="true" />
-                Presiona Esc o haz clic fuera para cerrar
+                Presione Esc para cerrar
               </span>
             )}
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => dialogRef.current?.close()}
-              className="rounded-xl border border-slate-700 bg-slate-800/80 px-4 py-2.5 text-xs font-semibold text-slate-300 transition hover:bg-slate-800 hover:text-white"
+              className="rounded-sm border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
             >
               Cerrar
             </button>
             <button
               type="submit"
               disabled={isSaving}
-              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-gcf-500 to-gcf-800 px-5 py-2.5 text-xs font-bold text-white shadow-gcf-glow transition hover:brightness-110 disabled:opacity-60"
+              className="inline-flex items-center gap-1.5 rounded-sm bg-blue-700 px-4 py-2 text-xs font-bold text-white transition hover:bg-blue-800 disabled:opacity-60"
             >
-              <Save className="h-4 w-4" aria-hidden="true" />
-              <span>{isSaving ? 'Guardando...' : 'Guardar Ficha Técnica'}</span>
+              <Save className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>{isSaving ? 'Guardando...' : 'Guardar Cambios'}</span>
             </button>
           </div>
         </div>
