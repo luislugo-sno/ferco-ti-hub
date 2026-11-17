@@ -1,0 +1,18 @@
+{
+  "name": "Hub Operativo TI/BI - Grupo Comercializadora Ferco",
+  "short_name": "Ferco TI/BI",
+  "description": "Sistema centralizado ITSM de captura de tareas, soporte técnico y control de requerimientos de TI y BI - Grupo Comercializadora Ferco",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/gcf_icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none">
+  <rect width="120" height="120" rx="24" fill="#ffffff" />
+  <rect x="8" y="8" width="104" height="104" rx="18" fill="#6A87E4" />
+  <!-- Dos círculos superiores blancos característicos del isotipo GCF -->
+  <circle cx="42" cy="34" r="13" fill="#ffffff" />
+  <circle cx="76" cy="31" r="13" fill="#ffffff" />
+  <!-- Curva blanca inferior estilo sonrisa/enlace -->
+  <path d="M16 74C22 68 30 72 34 80C40 92 58 95 72 86C82 80 86 68 86 62H64C56 62 50 56 50 48C50 40 56 34 64 34H96C102 34 106 39 106 46C106 76 84 104 48 106C28 107 14 96 8 84V76C10 74 13 74 16 74Z" fill="#ffffff" />
+  <!-- Esquina inferior derecha azul cobalto profundo (#2524CD) del logo GCF -->
+  <path d="M112 72V94C112 103.941 103.941 112 94 112H72C88 104 102 90 112 72Z" fill="#2524CD" />
+</svg>

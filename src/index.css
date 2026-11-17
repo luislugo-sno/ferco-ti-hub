@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+    --gcf-primary: #6A87E4;
+    --gcf-accent: #2524CD;
+    --gcf-soft: #A5B7EF;
+    --gcf-tint: #D5DDF9;
+  }
+
+  /* MANDATORY per modern-web-guidance (dialog): stop scroll chaining without removing root scrollbar */
+  dialog:modal {
+    overscroll-behavior: contain;
+  }
+
+  dialog::backdrop {
+    overflow: hidden;
+    overscroll-behavior: contain;
+    background: rgba(10, 13, 34, 0.82);
+    backdrop-filter: blur(8px);
+  }
+}
+
+/* Custom subtle scrollbars aligned with GCF Periwinkle/Cobalt palette */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(12, 15, 38, 0.75);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(106, 135, 228, 0.45);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(106, 135, 228, 0.8);
+}
