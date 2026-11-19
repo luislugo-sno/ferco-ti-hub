@@ -945,8 +945,13 @@ export function subscribeToTicketsTI(
   const cleanups: Array<() => void> = [];
 
   if (supabase) {
-    const channel = supabase
-      .channel('tickets_ti_realtime_hub')
+    const client = supabase;
+    const uniqueChannelName = `tickets_ti_hub_${Date.now()}_${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+
+    const channel = client
+      .channel(uniqueChannelName)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'tickets_ti' },
@@ -972,7 +977,7 @@ export function subscribeToTicketsTI(
       .subscribe();
 
     cleanups.push(() => {
-      supabase.removeChannel(channel);
+      void client.removeChannel(channel);
     });
   }
 

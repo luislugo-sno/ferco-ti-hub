@@ -24,7 +24,7 @@ import {
   parseUbicacion,
   PublicTicketTI,
 } from '../types/tickets';
-import { fetchPublicTicketByCodigo, subscribeToTicketsTI } from '../lib/supabase';
+import { fetchPublicTicketByCodigo, supabase } from '../lib/supabase';
 import { SpecialistBadge } from './BrandSvgElements';
 
 interface ConsultarTicketViewProps {
@@ -174,13 +174,51 @@ export const ConsultarTicketView: React.FC<ConsultarTicketViewProps> = ({
     }
   }, [initialCodigoParam, executeLookup]);
 
-  // Suscripción en tiempo real: si cambia el ticket consultado, refrescar sin recargar
+  // Suscripción en tiempo real con canal único por instancia: consulta_ticket_${ticketId}_${Date.now()}
   useEffect(() => {
     if (searchedCodeNum === null || Number.isNaN(searchedCodeNum)) return;
-    const unsubscribe = subscribeToTicketsTI(() => {
-      void executeLookup(searchedCodeNum, false);
-    });
-    return () => unsubscribe();
+
+    const cleanups: Array<() => void> = [];
+
+    if (supabase) {
+      const client = supabase;
+      const channelName = `consulta_ticket_${searchedCodeNum}_${Date.now()}`;
+      const channel = client
+        .channel(channelName)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'tickets_ti',
+            filter: `codigo_ticket=eq.${searchedCodeNum}`,
+          },
+          () => {
+            void executeLookup(searchedCodeNum, false);
+          }
+        )
+        .subscribe();
+
+      cleanups.push(() => {
+        void client.removeChannel(channel);
+      });
+    }
+
+    if (typeof BroadcastChannel !== 'undefined') {
+      const bc = new BroadcastChannel('ferco_tickets_ti_realtime_sync');
+      const onMsg = () => {
+        void executeLookup(searchedCodeNum, false);
+      };
+      bc.addEventListener('message', onMsg);
+      cleanups.push(() => {
+        bc.removeEventListener('message', onMsg);
+        bc.close();
+      });
+    }
+
+    return () => {
+      cleanups.forEach((fn) => fn());
+    };
   }, [searchedCodeNum, executeLookup]);
 
   const handleSearchSubmit = async (e: React.FormEvent) => {
