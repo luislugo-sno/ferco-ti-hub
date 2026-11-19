@@ -1,4 +1,4 @@
-import React, { useId, useState } from 'react';
+import React, { useEffect, useId, useState } from 'react';
 import {
   Zap,
   Flame,
@@ -12,6 +12,7 @@ import {
   Building2,
   Plus,
   MapPin,
+  Smartphone,
 } from 'lucide-react';
 import {
   AsignadoA,
@@ -34,7 +35,12 @@ import {
   parseUbicacion,
   TicketTI,
 } from '../types/tickets';
+import {
+  getNtfyTopic,
+  requestBrowserNotificationPermission,
+} from '../lib/notifications';
 import { SpecialistBadge } from './BrandSvgElements';
+import { MobileAlertsDialog } from './MobileAlertsDialog';
 import { TicketModalDialog } from './TicketModalDialog';
 
 interface CentroComandoViewProps {
@@ -108,6 +114,14 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
   const [draggedTicketId, setDraggedTicketId] = useState<string | null>(null);
   const [dragOverCol, setDragOverCol] = useState<EstadoTicket | null>(null);
 
+  // Configuración de Alertas Móviles (ntfy.sh) y permiso Web Notification API
+  const [isAlertsModalOpen, setIsAlertsModalOpen] = useState(false);
+  const [ntfyTopic, setNtfyTopicState] = useState<string>(() => getNtfyTopic());
+
+  useEffect(() => {
+    void requestBrowserNotificationPermission();
+  }, []);
+
   const handleQuickAddSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!quickTitle.trim() || isQuickSaving) return;
@@ -127,7 +141,7 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
       });
       setQuickTitle('');
       setQuickFeedback(
-        `${formatCodigoTicket(created.codigo_ticket)} encolado correctamente`
+        `${formatCodigoTicket(created.codigo_ticket)} encolado y Push enviado`
       );
       setTimeout(() => setQuickFeedback(null), 3500);
     } finally {
@@ -333,7 +347,7 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
         </form>
       </section>
 
-      {/* 2. BARRA DE CONTROL: MODO FOCO + ALERTAS WIP + FILTROS ORGANIZACIONALES (<search>) */}
+      {/* 2. BARRA DE CONTROL: MODO FOCO + ALERTAS MÓVILES PUSH + WIP + FILTROS (<search>) */}
       <search className="flex flex-col gap-2.5 rounded-md border border-slate-200 bg-white p-3 shadow-xs xl:flex-row xl:items-center xl:justify-between">
         <div className="flex flex-wrap items-center gap-2">
           {/* Botón Modo Foco / Fuego Hoy */}
@@ -360,6 +374,19 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
               }`}
             >
               {modoFoco ? 'ACTIVO' : 'OFF'}
+            </span>
+          </button>
+
+          {/* Botón Discreto de Alertas Móviles (Push ntfy.sh) */}
+          <button
+            type="button"
+            onClick={() => setIsAlertsModalOpen(true)}
+            className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-slate-300 bg-slate-50 px-2.5 text-xs font-semibold text-slate-800 transition hover:border-blue-700 hover:bg-blue-50 hover:text-blue-800"
+          >
+            <Smartphone className="h-3.5 w-3.5 text-blue-700" aria-hidden="true" />
+            <span>Alertas Móviles (Push)</span>
+            <span className="hidden sm:inline rounded-sm border border-slate-200 bg-white px-1.5 py-0.2 font-mono text-[10px] text-slate-600">
+              {ntfyTopic}
             </span>
           </button>
 
@@ -403,7 +430,7 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
 
         {/* Filtros por Texto, Departamento, Sede y Especialista */}
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative flex-1 sm:w-52 sm:flex-initial">
+          <div className="relative flex-1 sm:w-48 sm:flex-initial">
             <Search
               className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
               aria-hidden="true"
@@ -448,7 +475,7 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
               id={filterSedeId}
               value={filtroSede}
               onChange={(e) => setFiltroSede(e.target.value)}
-              className="h-8 max-w-[190px] rounded-sm border border-slate-300 bg-white px-2 text-xs font-medium text-slate-700 focus:border-blue-700 focus:outline-none"
+              className="h-8 max-w-[180px] rounded-sm border border-slate-300 bg-white px-2 text-xs font-medium text-slate-700 focus:border-blue-700 focus:outline-none"
             >
               <option value="TODAS">Todas las Sedes / Tiendas</option>
               {CATALOGO_SEDES_DETALLE.map((s) => (
@@ -467,7 +494,7 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
               id={filterAsignadoId}
               value={filtroAsignado}
               onChange={(e) => setFiltroAsignado(e.target.value)}
-              className="h-8 max-w-[210px] rounded-sm border border-slate-300 bg-white px-2 text-xs font-semibold text-slate-800 focus:border-blue-700 focus:outline-none"
+              className="h-8 max-w-[205px] rounded-sm border border-slate-300 bg-white px-2 text-xs font-semibold text-slate-800 focus:border-blue-700 focus:outline-none"
             >
               <option value="TODOS">Equipo BI/TI ({tickets.length})</option>
               {EQUIPO_TI_BI.map((miembro) => (
@@ -718,6 +745,13 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
         ticket={activeModalTicket}
         onClose={() => setSelectedTicket(null)}
         onUpdateTicket={onUpdateTicket}
+      />
+
+      {/* Modal de Configuración de Alertas Móviles Push (ntfy.sh) */}
+      <MobileAlertsDialog
+        isOpen={isAlertsModalOpen}
+        onClose={() => setIsAlertsModalOpen(false)}
+        onTopicChanged={(newTopic) => setNtfyTopicState(newTopic)}
       />
     </div>
   );

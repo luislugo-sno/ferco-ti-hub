@@ -5,6 +5,7 @@ import {
   NuevoTicketInput,
   TicketTI,
 } from '../types/tickets';
+import { sendNtfyTicketNotification } from './notifications';
 
 const rawUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const rawKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -170,12 +171,16 @@ function getLocalTickets(): TicketTI[] {
   }
 }
 
-function saveLocalTickets(tickets: TicketTI[]): void {
+function saveLocalTickets(tickets: TicketTI[], newlyCreated?: TicketTI): void {
   try {
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(tickets));
     if (typeof BroadcastChannel !== 'undefined') {
       const bc = new BroadcastChannel(BROADCAST_CHANNEL_NAME);
-      bc.postMessage({ type: 'SYNC_TICKETS', payload: tickets });
+      if (newlyCreated) {
+        bc.postMessage({ type: 'NEW_TICKET_CREATED', payload: newlyCreated });
+      } else {
+        bc.postMessage({ type: 'SYNC_TICKETS', payload: tickets });
+      }
       bc.close();
     }
   } catch (err) {
@@ -238,6 +243,8 @@ export async function createTicketTI(
         asignado_a: normalizeAsignadoA(data.asignado_a),
         score_prioridad: data.score_prioridad ?? data.impacto * data.urgencia,
       };
+      // Disparo Push instantáneo a ntfy.sh (< 1s)
+      void sendNtfyTicketNotification(created);
       return { ticket: created, mode: 'supabase' };
     }
     console.warn('Fallo inserción en Supabase, guardando en almacenamiento local:', error?.message);
@@ -270,7 +277,11 @@ export async function createTicketTI(
   };
 
   const updated = [newTicket, ...current];
-  saveLocalTickets(updated);
+  saveLocalTickets(updated, newTicket);
+
+  // Disparo Push instantáneo a ntfy.sh (< 1s)
+  void sendNtfyTicketNotification(newTicket);
+
   return { ticket: newTicket, mode: 'local' };
 }
 
@@ -287,6 +298,7 @@ export async function updateTicketTI(
       | 'categoria'
       | 'titulo'
       | 'descripcion'
+      | 'departamento_tienda'
       | 'fecha_resolucion'
     >
   >
@@ -356,7 +368,10 @@ export async function updateTicketTI(
   return { ticket: updatedItem, mode: 'local' };
 }
 
-export function subscribeToTicketsTI(onUpdate: () => void): () => void {
+export function subscribeToTicketsTI(
+  onUpdate: () => void,
+  onNewTicket?: (ticket: TicketTI) => void
+): () => void {
   const cleanups: Array<() => void> = [];
 
   if (supabase) {
@@ -365,7 +380,15 @@ export function subscribeToTicketsTI(onUpdate: () => void): () => void {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'tickets_ti' },
-        () => {
+        (payload) => {
+          if (payload.eventType === 'INSERT' && payload.new && onNewTicket) {
+            const raw = payload.new as TicketTI;
+            onNewTicket({
+              ...raw,
+              asignado_a: normalizeAsignadoA(raw.asignado_a),
+              score_prioridad: raw.score_prioridad ?? raw.impacto * raw.urgencia,
+            });
+          }
           onUpdate();
         }
       )
@@ -378,7 +401,16 @@ export function subscribeToTicketsTI(onUpdate: () => void): () => void {
 
   if (typeof BroadcastChannel !== 'undefined') {
     const bc = new BroadcastChannel(BROADCAST_CHANNEL_NAME);
-    const handler = () => onUpdate();
+    const handler = (event: MessageEvent) => {
+      if (
+        event.data?.type === 'NEW_TICKET_CREATED' &&
+        event.data?.payload &&
+        onNewTicket
+      ) {
+        onNewTicket(event.data.payload as TicketTI);
+      }
+      onUpdate();
+    };
     bc.addEventListener('message', handler);
     cleanups.push(() => {
       bc.removeEventListener('message', handler);

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActiveTab,
   HeaderInstitucional,
@@ -13,6 +13,7 @@ import {
   subscribeToTicketsTI,
   updateTicketTI,
 } from './lib/supabase';
+import { triggerBrowserTicketNotification } from './lib/notifications';
 import { NuevoTicketInput, TicketTI } from './types/tickets';
 
 const SESSION_UNLOCK_KEY = 'ferco_ti_bi_unlocked_session';
@@ -42,6 +43,11 @@ export const App: React.FC = () => {
     return requested;
   });
 
+  const activeTabRef = useRef<ActiveTab>(activeTab);
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+
   const [pendingProtectedTab, setPendingProtectedTab] = useState<ActiveTab | null>(() => {
     const requested = getInitialTabFromUrl();
     const unlocked = sessionStorage.getItem(SESSION_UNLOCK_KEY) === 'true';
@@ -60,9 +66,20 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     loadTickets();
-    const unsubscribe = subscribeToTicketsTI(() => {
-      loadTickets();
-    });
+    const unsubscribe = subscribeToTicketsTI(
+      () => {
+        loadTickets();
+      },
+      (newTicket) => {
+        // Si el Centro de Comando está abierto (o la sesión TI está desbloqueada), lanzar notificación nativa + beep Web Audio
+        if (
+          activeTabRef.current === 'comando' ||
+          sessionStorage.getItem(SESSION_UNLOCK_KEY) === 'true'
+        ) {
+          triggerBrowserTicketNotification(newTicket);
+        }
+      }
+    );
     return () => unsubscribe();
   }, [loadTickets]);
 
@@ -90,8 +107,8 @@ export const App: React.FC = () => {
       tab === 'solicitar'
         ? '/solicitar'
         : tab === 'comando'
-          ? '/comando'
-          : '/metricas';
+        ? '/comando'
+        : '/metricas';
     if (window.location.pathname !== nextPath) {
       window.history.pushState({}, '', nextPath);
     }
@@ -191,7 +208,7 @@ export const App: React.FC = () => {
             Tecnología
           </span>
           <span className="text-slate-500">
-            Sistema ITSM • Matriz Impacto × Urgencia • Control WIP Limit Activo
+            Sistema ITSM • Matriz Impacto × Urgencia • Alertas Push ntfy.sh Activas
           </span>
         </div>
       </footer>
