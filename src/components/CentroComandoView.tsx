@@ -36,7 +36,8 @@ import {
   TicketTI,
 } from '../types/tickets';
 import {
-  getNtfyTopic,
+  isTelegramConfigured,
+  isTelegramEnabled,
   requestBrowserNotificationPermission,
 } from '../lib/notifications';
 import { SpecialistBadge } from './BrandSvgElements';
@@ -114,9 +115,11 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
   const [draggedTicketId, setDraggedTicketId] = useState<string | null>(null);
   const [dragOverCol, setDragOverCol] = useState<EstadoTicket | null>(null);
 
-  // Configuración de Alertas Móviles (ntfy.sh) y permiso Web Notification API
+  // Configuración de Alertas Telegram y permiso Web Notification API
   const [isAlertsModalOpen, setIsAlertsModalOpen] = useState(false);
-  const [ntfyTopic, setNtfyTopicState] = useState<string>(() => getNtfyTopic());
+  const [telegramActive, setTelegramActive] = useState<boolean>(
+    () => isTelegramConfigured() && isTelegramEnabled()
+  );
 
   useEffect(() => {
     void requestBrowserNotificationPermission();
@@ -377,16 +380,22 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
             </span>
           </button>
 
-          {/* Botón Discreto de Alertas Móviles (Push ntfy.sh) */}
+          {/* Botón Discreto de Alertas Telegram */}
           <button
             type="button"
             onClick={() => setIsAlertsModalOpen(true)}
             className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-slate-300 bg-slate-50 px-2.5 text-xs font-semibold text-slate-800 transition hover:border-blue-700 hover:bg-blue-50 hover:text-blue-800"
           >
             <Smartphone className="h-3.5 w-3.5 text-blue-700" aria-hidden="true" />
-            <span>Alertas Móviles (Push)</span>
-            <span className="hidden sm:inline rounded-sm border border-slate-200 bg-white px-1.5 py-0.2 font-mono text-[10px] text-slate-600">
-              {ntfyTopic}
+            <span>Alertas Telegram</span>
+            <span
+              className={`rounded-sm border px-1.5 py-0.2 font-mono text-[10px] ${
+                telegramActive
+                  ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                  : 'border-slate-200 bg-white text-slate-500'
+              }`}
+            >
+              {telegramActive ? 'ACTIVO' : 'CONFIGURAR'}
             </span>
           </button>
 
@@ -747,11 +756,11 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
         onUpdateTicket={onUpdateTicket}
       />
 
-      {/* Modal de Configuración de Alertas Móviles Push (ntfy.sh) */}
+      {/* Modal de Configuración de Alertas Telegram */}
       <MobileAlertsDialog
         isOpen={isAlertsModalOpen}
         onClose={() => setIsAlertsModalOpen(false)}
-        onTopicChanged={(newTopic) => setNtfyTopicState(newTopic)}
+        onConfigChanged={(active) => setTelegramActive(active)}
       />
     </div>
   );

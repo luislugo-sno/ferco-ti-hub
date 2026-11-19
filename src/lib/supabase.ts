@@ -5,7 +5,7 @@ import {
   NuevoTicketInput,
   TicketTI,
 } from '../types/tickets';
-import { sendNtfyTicketNotification } from './notifications';
+import { sendTelegramTicketNotification } from './notifications';
 
 const rawUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const rawKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -243,8 +243,8 @@ export async function createTicketTI(
         asignado_a: normalizeAsignadoA(data.asignado_a),
         score_prioridad: data.score_prioridad ?? data.impacto * data.urgencia,
       };
-      // Disparo Push instantáneo a ntfy.sh (< 1s)
-      void sendNtfyTicketNotification(created);
+      // Disparo Push instantáneo a Telegram Bot API
+      void sendTelegramTicketNotification(created);
       return { ticket: created, mode: 'supabase' };
     }
     console.warn('Fallo inserción en Supabase, guardando en almacenamiento local:', error?.message);
@@ -279,8 +279,8 @@ export async function createTicketTI(
   const updated = [newTicket, ...current];
   saveLocalTickets(updated, newTicket);
 
-  // Disparo Push instantáneo a ntfy.sh (< 1s)
-  void sendNtfyTicketNotification(newTicket);
+  // Disparo Push instantáneo a Telegram Bot API
+  void sendTelegramTicketNotification(newTicket);
 
   return { ticket: newTicket, mode: 'local' };
 }

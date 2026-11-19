@@ -1,45 +1,46 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import {
   BellRing,
-  Smartphone,
   Send,
   CheckCircle2,
   AlertCircle,
-  Copy,
-  Check,
   Volume2,
   X,
   Save,
+  Eye,
+  EyeOff,
+  MessageSquareShare,
 } from 'lucide-react';
 import {
-  getNtfyTopic,
-  isNtfyEnabled,
+  getTelegramConfig,
   playAlertBeep,
   requestBrowserNotificationPermission,
-  sendNtfyTestNotification,
-  setNtfyEnabled,
-  setNtfyTopic,
+  saveTelegramConfig,
+  sendTelegramTestNotification,
 } from '../lib/notifications';
 
 interface MobileAlertsDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onTopicChanged: (newTopic: string) => void;
+  onConfigChanged: (configured: boolean) => void;
 }
 
 export const MobileAlertsDialog: React.FC<MobileAlertsDialogProps> = ({
   isOpen,
   onClose,
-  onTopicChanged,
+  onConfigChanged,
 }) => {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleId = useId();
-  const topicInputId = useId();
+  const tokenInputId = useId();
+  const chatIdInputId = useId();
   const enabledCheckId = useId();
 
-  const [topic, setTopic] = useState<string>(() => getNtfyTopic());
-  const [enabled, setEnabled] = useState<boolean>(() => isNtfyEnabled());
-  const [copied, setCopied] = useState(false);
+  const [botToken, setBotToken] = useState<string>('');
+  const [chatId, setChatId] = useState<string>('');
+  const [enabled, setEnabled] = useState<boolean>(true);
+  const [showToken, setShowToken] = useState<boolean>(false);
+
   const [savedMsg, setSavedMsg] = useState(false);
   const [isSendingTest, setIsSendingTest] = useState(false);
   const [testResult, setTestResult] = useState<{
@@ -57,8 +58,10 @@ export const MobileAlertsDialog: React.FC<MobileAlertsDialogProps> = ({
     if (!dialog) return;
 
     if (isOpen && !dialog.open) {
-      setTopic(getNtfyTopic());
-      setEnabled(isNtfyEnabled());
+      const current = getTelegramConfig();
+      setBotToken(current.botToken);
+      setChatId(current.chatId);
+      setEnabled(current.enabled);
       setTestResult(null);
       setSavedMsg(false);
       if (typeof window !== 'undefined' && 'Notification' in window) {
@@ -115,41 +118,43 @@ export const MobileAlertsDialog: React.FC<MobileAlertsDialogProps> = ({
 
   const handleSaveConfig = (e: React.FormEvent) => {
     e.preventDefault();
-    const clean = setNtfyTopic(topic);
-    setNtfyEnabled(enabled);
-    setTopic(clean);
-    onTopicChanged(clean);
+    const saved = saveTelegramConfig({ botToken, chatId, enabled });
+    setBotToken(saved.botToken);
+    setChatId(saved.chatId);
+    setEnabled(saved.enabled);
+    onConfigChanged(Boolean(saved.botToken && saved.chatId && saved.enabled));
     setSavedMsg(true);
     setTimeout(() => setSavedMsg(false), 2500);
   };
 
-  const handleCopyTopic = () => {
-    navigator.clipboard?.writeText(topic);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
   const handleSendTestPush = async () => {
-    const clean = setNtfyTopic(topic);
-    setTopic(clean);
-    onTopicChanged(clean);
+    const saved = saveTelegramConfig({ botToken, chatId, enabled });
+    setBotToken(saved.botToken);
+    setChatId(saved.chatId);
+    onConfigChanged(Boolean(saved.botToken && saved.chatId && saved.enabled));
 
     setIsSendingTest(true);
     setTestResult(null);
     playAlertBeep(true);
 
-    const res = await sendNtfyTestNotification(clean);
+    const res = await sendTelegramTestNotification({
+      botToken: saved.botToken,
+      chatId: saved.chatId,
+    });
     setIsSendingTest(false);
 
     if (res.ok) {
       setTestResult({
         ok: true,
-        message: `Push enviado con éxito a https://ntfy.sh/${res.topic}. Verifique su celular.`,
+        message:
+          'Respuesta de la API de Telegram exitosa (ok: true). El mensaje de prueba fue entregado al chat configurado.',
       });
     } else {
       setTestResult({
         ok: false,
-        message: res.error || 'No se pudo enviar la notificación Push a ntfy.sh.',
+        message:
+          res.error ||
+          'La API de Telegram rechazó el envío. Verifique su Bot Token y Chat ID.',
       });
     }
   };
@@ -173,14 +178,14 @@ export const MobileAlertsDialog: React.FC<MobileAlertsDialogProps> = ({
       <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-3.5">
         <div className="flex items-center gap-2.5">
           <div className="flex h-8 w-8 items-center justify-center rounded-sm border border-blue-200 bg-blue-50 text-blue-700">
-            <Smartphone className="h-4 w-4" aria-hidden="true" />
+            <MessageSquareShare className="h-4 w-4" aria-hidden="true" />
           </div>
           <div>
             <h2 id={titleId} className="text-sm font-bold text-slate-900">
-              Configuración de Alertas Móviles (ntfy.sh) y Navegador
+              Configuración de Alertas Telegram y Navegador
             </h2>
             <p className="text-[11px] text-slate-600">
-              Notificaciones Push instantáneas (&lt; 1 seg) al registrar nuevos tickets
+              Integración directa con Telegram Bot API y Web Notification API
             </p>
           </div>
         </div>
@@ -188,7 +193,7 @@ export const MobileAlertsDialog: React.FC<MobileAlertsDialogProps> = ({
         <button
           type="button"
           onClick={() => dialogRef.current?.close()}
-          aria-label="Cerrar configuración de alertas móviles"
+          aria-label="Cerrar configuración de alertas Telegram"
           className="rounded-sm p-1 text-slate-500 transition hover:bg-slate-200 hover:text-slate-900"
         >
           <X className="h-4 w-4" aria-hidden="true" />
@@ -197,56 +202,73 @@ export const MobileAlertsDialog: React.FC<MobileAlertsDialogProps> = ({
 
       {/* Cuerpo */}
       <form onSubmit={handleSaveConfig} className="space-y-4 p-5">
-        {/* Canal ntfy.sh */}
-        <div className="space-y-1.5">
+        {/* Input 1: Telegram Bot Token */}
+        <div className="space-y-1">
           <label
-            htmlFor={topicInputId}
+            htmlFor={tokenInputId}
             className="block text-xs font-bold uppercase tracking-wider text-slate-700"
           >
-            Canal / Topic de ntfy.sh
+            Telegram Bot Token (VITE_TELEGRAM_BOT_TOKEN)
           </label>
-          <div className="flex gap-1.5">
+          <div className="relative flex items-center">
             <input
-              id={topicInputId}
-              type="text"
-              value={topic}
-              onChange={(e) => setTopic(e.target.value)}
+              id={tokenInputId}
+              type={showToken ? 'text' : 'password'}
+              value={botToken}
+              onChange={(e) => setBotToken(e.target.value)}
               autoCorrect="off"
               autoCapitalize="none"
               spellCheck={false}
-              placeholder="ferco-ti-luislugo-alertas"
-              className="h-9 flex-1 rounded-sm border border-slate-300 bg-white px-3 font-mono text-xs text-slate-900 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
+              placeholder="Ej: 1234567890:AAH_tu_token_de_botfather"
+              className="h-9 w-full rounded-sm border border-slate-300 bg-white pl-3 pr-9 font-mono text-xs text-slate-900 placeholder:font-sans placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
             />
             <button
               type="button"
-              onClick={handleCopyTopic}
-              className="inline-flex h-9 items-center gap-1 rounded-sm border border-slate-300 bg-slate-50 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+              aria-pressed={showToken}
+              aria-label={showToken ? 'Ocultar Bot Token' : 'Mostrar Bot Token'}
+              onClick={() => setShowToken((p) => !p)}
+              className="absolute right-2 rounded-sm p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
             >
-              {copied ? (
-                <>
-                  <Check className="h-3.5 w-3.5 text-emerald-700" aria-hidden="true" />
-                  <span>Copiado</span>
-                </>
+              {showToken ? (
+                <EyeOff className="h-3.5 w-3.5" aria-hidden="true" />
               ) : (
-                <>
-                  <Copy className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
-                  <span>Copiar</span>
-                </>
+                <Eye className="h-3.5 w-3.5" aria-hidden="true" />
               )}
             </button>
+          </div>
+        </div>
+
+        {/* Input 2: Telegram Chat ID */}
+        <div className="space-y-1">
+          <label
+            htmlFor={chatIdInputId}
+            className="block text-xs font-bold uppercase tracking-wider text-slate-700"
+          >
+            Telegram Chat ID (VITE_TELEGRAM_CHAT_ID)
+          </label>
+          <div className="flex gap-2">
+            <input
+              id={chatIdInputId}
+              type="text"
+              value={chatId}
+              onChange={(e) => setChatId(e.target.value)}
+              autoCorrect="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              placeholder="Ej: 123456789 o -100123456789 (Grupo/Canal)"
+              className="h-9 flex-1 rounded-sm border border-slate-300 bg-white px-3 font-mono text-xs text-slate-900 placeholder:font-sans placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
+            />
             <button
               type="submit"
-              className="inline-flex h-9 items-center gap-1 rounded-sm border border-blue-700 bg-blue-50 px-3 text-xs font-bold text-blue-800 transition hover:bg-blue-100"
+              className="inline-flex h-9 items-center gap-1.5 rounded-sm border border-blue-700 bg-blue-50 px-3.5 text-xs font-bold text-blue-800 transition hover:bg-blue-100"
             >
               <Save className="h-3.5 w-3.5" aria-hidden="true" />
-              <span>Guardar</span>
+              <span>Guardar Credenciales</span>
             </button>
           </div>
           <p className="text-[11px] text-slate-500">
-            Endpoint activo:{' '}
-            <code className="rounded-sm border border-slate-200 bg-slate-100 px-1 py-0.5 font-mono text-slate-800">
-              https://ntfy.sh/{topic || 'ferco-ti-luislugo-alertas'}
-            </code>
+            Se leen de <code className="font-mono text-slate-700">.env</code> por defecto y
+            pueden sobreescribirse aquí en <code className="font-mono text-slate-700">localStorage</code>.
           </p>
         </div>
 
@@ -257,8 +279,10 @@ export const MobileAlertsDialog: React.FC<MobileAlertsDialogProps> = ({
             type="checkbox"
             checked={enabled}
             onChange={(e) => {
-              setEnabled(e.target.checked);
-              setNtfyEnabled(e.target.checked);
+              const next = e.target.checked;
+              setEnabled(next);
+              saveTelegramConfig({ botToken, chatId, enabled: next });
+              onConfigChanged(Boolean(botToken.trim() && chatId.trim() && next));
             }}
             className="h-4 w-4 accent-blue-700"
           />
@@ -266,25 +290,20 @@ export const MobileAlertsDialog: React.FC<MobileAlertsDialogProps> = ({
             htmlFor={enabledCheckId}
             className="cursor-pointer select-none text-xs font-semibold text-slate-800"
           >
-            Enviar Push automático a ntfy.sh cada vez que se registre un ticket nuevo
+            Enviar notificación automática a Telegram al crear cada ticket nuevo
           </label>
         </div>
 
-        {/* Botón Principal de Prueba Instantánea al Celular */}
+        {/* Botón Principal: Enviar Push de Prueba a Telegram */}
         <div className="rounded-sm border border-slate-200 bg-slate-50 p-3.5 space-y-2.5">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
-              Prueba de Recepción en Celular
+              Verificación en Vivo con API de Telegram
             </span>
             <span className="font-mono text-[10px] font-semibold text-blue-700">
-              Prioridad: urgent (5)
+              parse_mode: HTML
             </span>
           </div>
-          <p className="text-[11px] leading-relaxed text-slate-600">
-            1. Instale la app gratuita <strong>ntfy</strong> en su celular (Android / iOS).
-            <br />
-            2. Suscríbase al tema <code className="font-mono font-bold text-slate-800">{topic}</code> y presione el botón debajo:
-          </p>
 
           <button
             type="button"
@@ -295,8 +314,8 @@ export const MobileAlertsDialog: React.FC<MobileAlertsDialogProps> = ({
             <Send className="h-3.5 w-3.5" aria-hidden="true" />
             <span>
               {isSendingTest
-                ? 'Enviando Push a ntfy.sh...'
-                : 'Enviar Push de Prueba a mi Celular'}
+                ? 'Enviando mensaje a api.telegram.org...'
+                : 'Enviar Push de Prueba'}
             </span>
           </button>
 
@@ -335,7 +354,7 @@ export const MobileAlertsDialog: React.FC<MobileAlertsDialogProps> = ({
                 Notificación Nativa de Navegador + Sonido Web Audio
               </span>
               <span className="text-[11px] text-slate-500">
-                Estado del permiso:{' '}
+                Permiso del navegador:{' '}
                 <strong className="uppercase text-slate-700">{browserPerm}</strong>
               </span>
             </div>
@@ -369,7 +388,7 @@ export const MobileAlertsDialog: React.FC<MobileAlertsDialogProps> = ({
             {savedMsg && (
               <span className="inline-flex items-center gap-1 font-semibold text-emerald-700">
                 <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
-                Canal guardado en localStorage
+                Configuración de Telegram guardada
               </span>
             )}
           </div>

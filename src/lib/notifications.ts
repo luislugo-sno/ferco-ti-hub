@@ -1,160 +1,288 @@
 import { formatCodigoTicket, TicketTI } from '../types/tickets';
 
-const NTFY_TOPIC_STORAGE_KEY = 'ferco_ti_ntfy_topic';
-const NTFY_ENABLED_STORAGE_KEY = 'ferco_ti_ntfy_enabled';
-const DEFAULT_NTFY_TOPIC = 'ferco-ti-luislugo-alertas';
-const CLICK_URL_COMANDO = 'https://ferco-ti-hub.netlify.app/comando';
+const TELEGRAM_TOKEN_STORAGE_KEY = 'ferco_ti_telegram_bot_token';
+const TELEGRAM_CHAT_ID_STORAGE_KEY = 'ferco_ti_telegram_chat_id';
+const TELEGRAM_ENABLED_STORAGE_KEY = 'ferco_ti_telegram_enabled';
+const COMANDO_URL = 'https://ferco-ti-hub.netlify.app/comando';
 
-export function getNtfyTopic(): string {
+export interface TelegramConfig {
+  botToken: string;
+  chatId: string;
+  enabled: boolean;
+}
+
+export function getTelegramBotToken(): string {
   try {
-    const stored = localStorage.getItem(NTFY_TOPIC_STORAGE_KEY);
+    const stored = localStorage.getItem(TELEGRAM_TOKEN_STORAGE_KEY);
     if (stored && stored.trim().length > 0) {
       return stored.trim();
     }
   } catch {
     // Ignorar error de acceso a localStorage
   }
-  const envTopic = import.meta.env.VITE_NTFY_TOPIC as string | undefined;
-  if (envTopic && envTopic.trim().length > 0) {
-    return envTopic.trim();
+  const envToken = import.meta.env.VITE_TELEGRAM_BOT_TOKEN as string | undefined;
+  if (
+    envToken &&
+    envToken.trim().length > 0 &&
+    !envToken.includes('tu_token_de_botfather_aqui')
+  ) {
+    return envToken.trim();
   }
-  return DEFAULT_NTFY_TOPIC;
+  return '';
 }
 
-export function setNtfyTopic(topic: string): string {
-  const cleaned = topic
-    .trim()
-    .replace(/\s+/g, '-')
-    .replace(/[^a-zA-Z0-9_-]/g, '');
-  const finalTopic = cleaned || DEFAULT_NTFY_TOPIC;
+export function getTelegramChatId(): string {
   try {
-    localStorage.setItem(NTFY_TOPIC_STORAGE_KEY, finalTopic);
+    const stored = localStorage.getItem(TELEGRAM_CHAT_ID_STORAGE_KEY);
+    if (stored && stored.trim().length > 0) {
+      return stored.trim();
+    }
   } catch {
     // Ignorar error de acceso a localStorage
   }
-  return finalTopic;
+  const envChat = import.meta.env.VITE_TELEGRAM_CHAT_ID as string | undefined;
+  if (envChat && envChat.trim().length > 0 && envChat.trim() !== '123456789') {
+    return envChat.trim();
+  }
+  return '';
 }
 
-export function isNtfyEnabled(): boolean {
+export function isTelegramEnabled(): boolean {
   try {
-    const val = localStorage.getItem(NTFY_ENABLED_STORAGE_KEY);
+    const val = localStorage.getItem(TELEGRAM_ENABLED_STORAGE_KEY);
     return val === null ? true : val === 'true';
   } catch {
     return true;
   }
 }
 
-export function setNtfyEnabled(enabled: boolean): void {
+export function getTelegramConfig(): TelegramConfig {
+  return {
+    botToken: getTelegramBotToken(),
+    chatId: getTelegramChatId(),
+    enabled: isTelegramEnabled(),
+  };
+}
+
+export function saveTelegramConfig(config: {
+  botToken: string;
+  chatId: string;
+  enabled?: boolean;
+}): TelegramConfig {
+  const cleanToken = config.botToken.trim();
+  const cleanChatId = config.chatId.trim();
+  const cleanEnabled = config.enabled ?? isTelegramEnabled();
+
   try {
-    localStorage.setItem(NTFY_ENABLED_STORAGE_KEY, String(enabled));
+    localStorage.setItem(TELEGRAM_TOKEN_STORAGE_KEY, cleanToken);
+    localStorage.setItem(TELEGRAM_CHAT_ID_STORAGE_KEY, cleanChatId);
+    localStorage.setItem(TELEGRAM_ENABLED_STORAGE_KEY, String(cleanEnabled));
   } catch {
-    // Ignorar
+    // Ignorar error de localStorage
   }
+
+  return {
+    botToken: cleanToken,
+    chatId: cleanChatId,
+    enabled: cleanEnabled,
+  };
 }
 
-export function mapScoreToNtfyPriority(score: number): 'urgent' | 'default' | 'low' {
-  if (score >= 6) return 'urgent'; // 5 en ntfy
-  if (score >= 3) return 'default'; // 3 en ntfy
-  return 'low'; // 2 en ntfy
+export function isTelegramConfigured(): boolean {
+  const { botToken, chatId } = getTelegramConfig();
+  return Boolean(botToken && chatId);
 }
 
-export function mapScoreToNtfyTags(score: number): string {
-  if (score >= 6) return 'rotating_light,warning';
-  return 'ticket,wrench';
+function escapeHtml(text: string): string {
+  return String(text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+export function buildTelegramTicketHtml(ticket: TicketTI): string {
+  const headerLine =
+    ticket.score_prioridad >= 6
+      ? '🚨 TICKET CRÍTICO TI/BI'
+      : '📋 NUEVO REQUERIMIENTO TI/BI';
+
+  const nivelTexto =
+    ticket.score_prioridad >= 6
+      ? 'Alta/Crítica'
+      : ticket.score_prioridad >= 3
+      ? 'Media'
+      : 'Baja';
+
+  return [
+    `<b>${headerLine}</b>`,
+    '',
+    `<b>Prioridad:</b> Score ${ticket.score_prioridad} (${nivelTexto})`,
+    `<b>Solicitante:</b> ${escapeHtml(ticket.solicitante_nombre)}`,
+    `<b>Ubicación:</b> ${escapeHtml(ticket.departamento_tienda)}`,
+    `<b>Categoría:</b> ${escapeHtml(ticket.categoria)}`,
+    `<b>Asunto:</b> ${escapeHtml(ticket.titulo)}`,
+    `<b>Asignado a:</b> ${escapeHtml(ticket.asignado_a)}`,
+  ].join('\n');
 }
 
 /**
- * Envía una notificación Push instantánea (< 1s) a ntfy.sh cuando se crea un ticket nuevo
+ * Envía una notificación instantánea mediante la API de Bots de Telegram cuando se crea un ticket
  */
-export async function sendNtfyTicketNotification(
+export async function sendTelegramTicketNotification(
   ticket: TicketTI
 ): Promise<{ ok: boolean; error?: string }> {
-  if (!isNtfyEnabled()) {
-    return { ok: false, error: 'Notificaciones ntfy desactivadas localmente' };
+  const { botToken, chatId, enabled } = getTelegramConfig();
+
+  if (!enabled) {
+    return { ok: false, error: 'Alertas de Telegram desactivadas localmente.' };
+  }
+  if (!botToken || !chatId) {
+    return {
+      ok: false,
+      error: 'Falta configurar VITE_TELEGRAM_BOT_TOKEN o VITE_TELEGRAM_CHAT_ID.',
+    };
   }
 
-  const topic = getNtfyTopic();
-  const priority = mapScoreToNtfyPriority(ticket.score_prioridad);
-  const tags = mapScoreToNtfyTags(ticket.score_prioridad);
-  const title = `[FER-TI] Nuevo Ticket (${ticket.categoria}) - Prioridad ${ticket.score_prioridad}`;
-
-  const bodyLines = [
-    `Solicitante: ${ticket.solicitante_nombre} (${ticket.departamento_tienda})`,
-    `Asunto: ${ticket.titulo}`,
-    `Asignado a: ${ticket.asignado_a}`,
-  ];
-  const body = bodyLines.join('\n');
+  const text = buildTelegramTicketHtml(ticket);
 
   try {
-    const response = await fetch(`https://ntfy.sh/${encodeURIComponent(topic)}`, {
-      method: 'POST',
-      headers: {
-        Title: title,
-        Priority: priority,
-        Tags: tags,
-        Click: CLICK_URL_COMANDO,
-        'Content-Type': 'text/plain; charset=utf-8',
-      },
-      body,
-    });
+    const response = await fetch(
+      `https://api.telegram.org/bot${botToken}/sendMessage`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          chat_id: chatId,
+          parse_mode: 'HTML',
+          text,
+          reply_markup: {
+            inline_keyboard: [
+              [
+                {
+                  text: 'Abrir Centro de Comando',
+                  url: COMANDO_URL,
+                },
+              ],
+            ],
+          },
+        }),
+      }
+    );
 
-    if (!response.ok) {
+    const data = (await response.json().catch(() => null)) as {
+      ok?: boolean;
+      description?: string;
+    } | null;
+
+    if (!response.ok || !data?.ok) {
       return {
         ok: false,
-        error: `Error HTTP ${response.status} al enviar push a ntfy.sh`,
+        error:
+          data?.description ||
+          `Error HTTP ${response.status} desde la API de Telegram`,
       };
     }
 
     return { ok: true };
   } catch (err) {
-    console.warn('No se pudo enviar push a ntfy.sh:', err);
+    console.warn('No se pudo enviar mensaje a Telegram:', err);
     return {
       ok: false,
-      error: err instanceof Error ? err.message : 'Fallo de red hacia ntfy.sh',
+      error:
+        err instanceof Error
+          ? err.message
+          : 'Error de red al conectar con api.telegram.org',
     };
   }
 }
 
 /**
- * Envía un Push de prueba inmediato al celular del ingeniero para verificar el canal ntfy.sh
+ * Envía un mensaje Push de prueba real a Telegram y valida si la respuesta (`ok: true`) fue exitosa
  */
-export async function sendNtfyTestNotification(
-  customTopic?: string
-): Promise<{ ok: boolean; topic: string; error?: string }> {
-  const topic = (customTopic && customTopic.trim()) || getNtfyTopic();
-  const title = `[FER-TI] Nuevo Ticket (Odoo ERP / TPV Tiendas) - Prioridad 9`;
-  const body = [
-    `Solicitante: Prueba de Sistema (BI/TI | CDP1)`,
-    `Asunto: Verificación de alerta Push instantánea en celular (${formatCodigoTicket(999)})`,
-    `Asignado a: Luis Lugo - Analista BI/TI`,
-  ].join('\n');
+export async function sendTelegramTestNotification(override?: {
+  botToken?: string;
+  chatId?: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const botToken = (override?.botToken ?? getTelegramBotToken()).trim();
+  const chatId = (override?.chatId ?? getTelegramChatId()).trim();
+
+  if (!botToken || !chatId) {
+    return {
+      ok: false,
+      error: 'Ingrese un Bot Token y un Chat ID válidos antes de enviar la prueba.',
+    };
+  }
+
+  const dummyTicket: TicketTI = {
+    id: 'test-telegram-push',
+    codigo_ticket: 999,
+    created_at: new Date().toISOString(),
+    solicitante_nombre: 'Prueba de Sistema BI/TI',
+    departamento_tienda: 'BI/TI | CDP1',
+    categoria: 'Odoo ERP / TPV Tiendas',
+    titulo: `Verificación de alerta Push instantánea (${formatCodigoTicket(999)})`,
+    descripcion: 'Mensaje de prueba enviado desde el Centro de Comando.',
+    impacto: 3,
+    urgencia: 3,
+    score_prioridad: 9,
+    estado: 'Bandeja de Entrada',
+    asignado_a: 'Luis Lugo - Analista BI/TI',
+    notas_tecnicas: '',
+    fecha_resolucion: null,
+  };
+
+  const text = buildTelegramTicketHtml(dummyTicket);
 
   try {
-    const response = await fetch(`https://ntfy.sh/${encodeURIComponent(topic)}`, {
-      method: 'POST',
-      headers: {
-        Title: title,
-        Priority: 'urgent',
-        Tags: 'rotating_light,warning',
-        Click: CLICK_URL_COMANDO,
-        'Content-Type': 'text/plain; charset=utf-8',
-      },
-      body,
-    });
+    const response = await fetch(
+      `https://api.telegram.org/bot${botToken}/sendMessage`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          chat_id: chatId,
+          parse_mode: 'HTML',
+          text,
+          reply_markup: {
+            inline_keyboard: [
+              [
+                {
+                  text: 'Abrir Centro de Comando',
+                  url: COMANDO_URL,
+                },
+              ],
+            ],
+          },
+        }),
+      }
+    );
 
-    if (!response.ok) {
+    const data = (await response.json().catch(() => null)) as {
+      ok?: boolean;
+      description?: string;
+    } | null;
+
+    if (!response.ok || data?.ok !== true) {
       return {
         ok: false,
-        topic,
-        error: `Respuesta HTTP ${response.status} desde ntfy.sh`,
+        error:
+          data?.description ||
+          `La API de Telegram devolvió estado HTTP ${response.status}`,
       };
     }
-    return { ok: true, topic };
+
+    return { ok: true };
   } catch (err) {
     return {
       ok: false,
-      topic,
-      error: err instanceof Error ? err.message : 'No se pudo conectar con ntfy.sh',
+      error:
+        err instanceof Error
+          ? err.message
+          : 'No se pudo conectar con api.telegram.org',
     };
   }
 }
@@ -190,11 +318,9 @@ export function playAlertBeep(isCritical = false): void {
     };
 
     if (isCritical) {
-      // Doble pulso de alta prioridad (880Hz -> 1174Hz)
       playTone(880, 0, 0.11, 0.16);
       playTone(1174.66, 0.14, 0.16, 0.18);
     } else {
-      // Pulso limpio corporativo (740Hz -> 987Hz)
       playTone(740, 0, 0.09, 0.12);
       playTone(987.77, 0.11, 0.12, 0.14);
     }

@@ -208,7 +208,7 @@ export const App: React.FC = () => {
             Tecnología
           </span>
           <span className="text-slate-500">
-            Sistema ITSM • Matriz Impacto × Urgencia • Alertas Push ntfy.sh Activas
+            Sistema ITSM • Matriz Impacto × Urgencia • Alertas Push Telegram Activas
           </span>
         </div>
       </footer>
