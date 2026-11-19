@@ -9,6 +9,7 @@ import { CentroComandoView } from './components/CentroComandoView';
 import { DashboardKPIsView } from './components/DashboardKPIsView';
 import { ConfigurarFormularioView } from './components/ConfigurarFormularioView';
 import { PinAuthDialog } from './components/PinAuthDialog';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import {
   createTicketTI,
   fetchAdminPinFromSupabase,
@@ -24,13 +25,16 @@ import { FormSchemaConfig, NuevoTicketInput, TicketTI } from './types/tickets';
 const SESSION_UNLOCK_KEY = 'ferco_ti_bi_unlocked_session';
 
 function getInitialTabFromUrl(): ActiveTab {
-  const path = window.location.pathname.toLowerCase();
-  if (path.includes('/solicitar')) return 'solicitar';
-  if (path.includes('/comando') || path.includes('/kanban')) return 'comando';
-  if (path.includes('/metricas') || path.includes('/kpis')) return 'metricas';
-  if (path.includes('/formulario') || path.includes('/configurar')) return 'formulario';
-  // Ruta raíz '/' y '/consultar' abren directamente la pantalla pública "Consultar mi Ticket"
-  return 'consultar';
+  try {
+    const path = (window.location.pathname || '').toLowerCase();
+    if (path.includes('/solicitar')) return 'solicitar';
+    if (path.includes('/comando') || path.includes('/kanban')) return 'comando';
+    if (path.includes('/metricas') || path.includes('/kpis')) return 'metricas';
+    if (path.includes('/formulario') || path.includes('/configurar')) return 'formulario';
+    return 'consultar';
+  } catch {
+    return 'consultar';
+  }
 }
 
 export const App: React.FC = () => {
@@ -41,17 +45,30 @@ export const App: React.FC = () => {
   const [connectionMode, setConnectionMode] = useState<'supabase' | 'local'>('local');
   const [isLoading, setIsLoading] = useState(true);
   const [trackedCodigoParam, setTrackedCodigoParam] = useState<string | null>(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get('codigo');
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('codigo');
+    } catch {
+      return null;
+    }
   });
 
   const [isUnlocked, setIsUnlocked] = useState<boolean>(() => {
-    return sessionStorage.getItem(SESSION_UNLOCK_KEY) === 'true';
+    try {
+      return sessionStorage.getItem(SESSION_UNLOCK_KEY) === 'true';
+    } catch {
+      return false;
+    }
   });
 
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
     const requested = getInitialTabFromUrl();
-    const unlocked = sessionStorage.getItem(SESSION_UNLOCK_KEY) === 'true';
+    let unlocked = false;
+    try {
+      unlocked = sessionStorage.getItem(SESSION_UNLOCK_KEY) === 'true';
+    } catch {
+      unlocked = false;
+    }
     if (
       (requested === 'comando' ||
         requested === 'metricas' ||
@@ -70,7 +87,12 @@ export const App: React.FC = () => {
 
   const [pendingProtectedTab, setPendingProtectedTab] = useState<ActiveTab | null>(() => {
     const requested = getInitialTabFromUrl();
-    const unlocked = sessionStorage.getItem(SESSION_UNLOCK_KEY) === 'true';
+    let unlocked = false;
+    try {
+      unlocked = sessionStorage.getItem(SESSION_UNLOCK_KEY) === 'true';
+    } catch {
+      unlocked = false;
+    }
     if (
       (requested === 'comando' ||
         requested === 'metricas' ||
@@ -83,27 +105,38 @@ export const App: React.FC = () => {
   });
 
   const loadTickets = useCallback(async () => {
-    const res = await fetchTicketsTI();
-    setTickets(res.data);
-    setConnectionMode(res.mode);
-    setIsLoading(false);
+    try {
+      const res = await fetchTicketsTI();
+      setTickets(Array.isArray(res?.data) ? res.data : []);
+      setConnectionMode(res?.mode || 'local');
+    } catch (err) {
+      console.error('Error cargando lista de tickets:', err);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
   const loadAppConfig = useCallback(async () => {
-    const [schemaRes] = await Promise.all([
-      fetchFormSchemaFromSupabase(),
-      fetchAdminPinFromSupabase(),
-    ]);
-    setFormSchema(schemaRes.schema);
+    try {
+      const [schemaRes] = await Promise.all([
+        fetchFormSchemaFromSupabase(),
+        fetchAdminPinFromSupabase(),
+      ]);
+      if (schemaRes?.schema) {
+        setFormSchema(schemaRes.schema);
+      }
+    } catch (err) {
+      console.warn('Error cargando configuración global:', err);
+    }
   }, []);
 
   useEffect(() => {
-    loadTickets();
-    loadAppConfig();
+    void loadTickets();
+    void loadAppConfig();
 
     const unsubscribe = subscribeToTicketsTI(
       () => {
-        loadTickets();
+        void loadTickets();
       },
       (newTicket) => {
         if (
@@ -114,7 +147,7 @@ export const App: React.FC = () => {
         }
       },
       () => {
-        loadAppConfig();
+        void loadAppConfig();
       }
     );
     return () => unsubscribe();
@@ -124,8 +157,12 @@ export const App: React.FC = () => {
   useEffect(() => {
     const onPopState = () => {
       const target = getInitialTabFromUrl();
-      const params = new URLSearchParams(window.location.search);
-      setTrackedCodigoParam(params.get('codigo'));
+      try {
+        const params = new URLSearchParams(window.location.search);
+        setTrackedCodigoParam(params.get('codigo'));
+      } catch {
+        setTrackedCodigoParam(null);
+      }
 
       if (
         (target === 'comando' || target === 'metricas' || target === 'formulario') &&
@@ -158,32 +195,56 @@ export const App: React.FC = () => {
     }
     setActiveTab(tab);
     const nextPath = getPathForTab(tab);
-    if (window.location.pathname !== nextPath) {
-      window.history.pushState({}, '', nextPath);
+    try {
+      if (window.location.pathname !== nextPath) {
+        window.history.pushState({}, '', nextPath);
+      }
+    } catch {
+      // ignore
     }
   };
 
   const handleViewTicketStatus = (codigoFormateado: string) => {
     setTrackedCodigoParam(codigoFormateado);
     setActiveTab('consultar');
-    const nextUrl = `/consultar?codigo=${encodeURIComponent(codigoFormateado)}`;
-    window.history.pushState({}, '', nextUrl);
+    try {
+      const nextUrl = `/consultar?codigo=${encodeURIComponent(codigoFormateado)}`;
+      window.history.pushState({}, '', nextUrl);
+    } catch {
+      // ignore
+    }
   };
 
   const handleUnlockSuccess = () => {
-    sessionStorage.setItem(SESSION_UNLOCK_KEY, 'true');
+    try {
+      sessionStorage.setItem(SESSION_UNLOCK_KEY, 'true');
+    } catch {
+      // ignore
+    }
     setIsUnlocked(true);
     const destination = pendingProtectedTab || 'comando';
     setPendingProtectedTab(null);
     setActiveTab(destination);
-    window.history.pushState({}, '', getPathForTab(destination));
+    try {
+      window.history.pushState({}, '', getPathForTab(destination));
+    } catch {
+      // ignore
+    }
   };
 
   const handleLock = () => {
-    sessionStorage.removeItem(SESSION_UNLOCK_KEY);
+    try {
+      sessionStorage.removeItem(SESSION_UNLOCK_KEY);
+    } catch {
+      // ignore
+    }
     setIsUnlocked(false);
     setActiveTab('consultar');
-    window.history.pushState({}, '', '/consultar');
+    try {
+      window.history.pushState({}, '', '/consultar');
+    } catch {
+      // ignore
+    }
   };
 
   const handleCreateTicket = async (input: NuevoTicketInput): Promise<TicketTI> => {
@@ -216,9 +277,10 @@ export const App: React.FC = () => {
     await loadTickets();
   };
 
-  const activeTicketsCount = tickets.filter((t) => t.estado !== 'Resuelto').length;
-  const criticalCount = tickets.filter(
-    (t) => t.estado !== 'Resuelto' && t.score_prioridad >= 6
+  const safeTickets = Array.isArray(tickets) ? tickets : [];
+  const activeTicketsCount = safeTickets.filter((t) => t?.estado !== 'Resuelto').length;
+  const criticalCount = safeTickets.filter(
+    (t) => t?.estado !== 'Resuelto' && (Number(t?.score_prioridad) || 0) >= 6
   ).length;
 
   return (
@@ -234,43 +296,50 @@ export const App: React.FC = () => {
       />
 
       <main className="mx-auto w-full max-w-[1600px] flex-1 px-3 py-3 sm:px-6 sm:py-5 lg:px-8">
-        {isLoading ? (
-          <div className="flex h-64 items-center justify-center">
-            <div className="flex items-center gap-2.5 text-xs font-semibold uppercase tracking-wider text-slate-600">
-              <span className="h-2.5 w-2.5 rounded-sm bg-blue-700" />
-              <span>Cargando Hub Operativo TI/BI...</span>
+        <ErrorBoundary
+          onReset={() => {
+            setTrackedCodigoParam(null);
+            navigateToTab('consultar');
+          }}
+        >
+          {isLoading ? (
+            <div className="flex h-64 items-center justify-center">
+              <div className="flex items-center gap-2.5 text-xs font-semibold uppercase tracking-wider text-slate-600">
+                <span className="h-2.5 w-2.5 rounded-sm bg-blue-700" />
+                <span>Cargando Hub Operativo TI/BI...</span>
+              </div>
             </div>
-          </div>
-        ) : activeTab === 'consultar' ? (
-          <ConsultarTicketView
-            initialCodigoParam={trackedCodigoParam}
-            onNavigateToSolicitar={() => navigateToTab('solicitar')}
-          />
-        ) : activeTab === 'solicitar' ? (
-          <PortalSolicitudView
-            onCreateTicket={handleCreateTicket}
-            formSchema={formSchema}
-            onViewTicketStatus={handleViewTicketStatus}
-          />
-        ) : activeTab === 'comando' ? (
-          <CentroComandoView
-            tickets={tickets}
-            formSchema={formSchema}
-            onCreateTicket={handleCreateTicket}
-            onUpdateTicket={handleUpdateTicket}
-          />
-        ) : activeTab === 'formulario' && isUnlocked ? (
-          <ConfigurarFormularioView
-            formSchema={formSchema}
-            onSchemaUpdated={(next) => setFormSchema(next)}
-          />
-        ) : (
-          <DashboardKPIsView
-            tickets={tickets}
-            formSchema={formSchema}
-            onUpdateTicket={handleUpdateTicket}
-          />
-        )}
+          ) : activeTab === 'consultar' ? (
+            <ConsultarTicketView
+              initialCodigoParam={trackedCodigoParam}
+              onNavigateToSolicitar={() => navigateToTab('solicitar')}
+            />
+          ) : activeTab === 'solicitar' ? (
+            <PortalSolicitudView
+              onCreateTicket={handleCreateTicket}
+              formSchema={formSchema}
+              onViewTicketStatus={handleViewTicketStatus}
+            />
+          ) : activeTab === 'comando' ? (
+            <CentroComandoView
+              tickets={safeTickets}
+              formSchema={formSchema}
+              onCreateTicket={handleCreateTicket}
+              onUpdateTicket={handleUpdateTicket}
+            />
+          ) : activeTab === 'formulario' && isUnlocked ? (
+            <ConfigurarFormularioView
+              formSchema={formSchema}
+              onSchemaUpdated={(next) => setFormSchema(next)}
+            />
+          ) : (
+            <DashboardKPIsView
+              tickets={safeTickets}
+              formSchema={formSchema}
+              onUpdateTicket={handleUpdateTicket}
+            />
+          )}
+        </ErrorBoundary>
       </main>
 
       <footer className="hidden border-t border-slate-200 bg-white py-3 text-center text-xs text-slate-500 lg:block">

@@ -13,12 +13,14 @@ import {
   ArrowRight,
   AlertCircle,
   RefreshCw,
+  Image as ImageIcon,
+  ClipboardList,
 } from 'lucide-react';
 import {
   EstadoTicket,
   formatCodigoTicket,
+  formatSafeDateTime,
   getPrioridadMeta,
-  parseCodigoTicketInput,
   parseUbicacion,
   PublicTicketTI,
 } from '../types/tickets';
@@ -57,12 +59,25 @@ const STEPPER_HITOS: Array<{
   },
 ];
 
-function getActiveStepIndex(estado: EstadoTicket): number {
-  if (estado === 'Bandeja de Entrada') return 0;
-  if (estado === 'En Cola') return 1;
-  if (estado === 'En Progreso' || estado === 'Esperando Proveedor/Tercero') return 2;
-  if (estado === 'Resuelto') return 3;
-  return 0;
+const STEPPER_STATES_ORDER = [
+  'Bandeja de Entrada',
+  'En Cola',
+  'En Progreso',
+  'Resuelto',
+];
+
+function getSafeStepIndex(estadoRaw?: string | null): number {
+  const st = typeof estadoRaw === 'string' && estadoRaw.trim() ? estadoRaw.trim() : 'Bandeja de Entrada';
+  if (st === 'Esperando Proveedor/Tercero') return 2;
+  const idx = STEPPER_STATES_ORDER.indexOf(st);
+  return idx >= 0 ? idx : 0;
+}
+
+function extractSafeCodeNumber(input?: string | null): number {
+  if (typeof input !== 'string' || !input.trim()) return Number.NaN;
+  const cleanDigits = input.replace(/\D/g, '');
+  if (!cleanDigits) return Number.NaN;
+  return parseInt(cleanDigits, 10);
 }
 
 export const ConsultarTicketView: React.FC<ConsultarTicketViewProps> = ({
@@ -72,17 +87,26 @@ export const ConsultarTicketView: React.FC<ConsultarTicketViewProps> = ({
   const searchInputId = useId();
 
   const [queryInput, setQueryInput] = useState<string>(() => {
-    if (initialCodigoParam) return initialCodigoParam;
-    const params = new URLSearchParams(window.location.search);
-    return params.get('codigo') || '';
+    try {
+      if (initialCodigoParam) return String(initialCodigoParam);
+      const params = new URLSearchParams(window.location.search);
+      return params.get('codigo') || '';
+    } catch {
+      return '';
+    }
   });
 
   const [searchedCodeNum, setSearchedCodeNum] = useState<number | null>(() => {
-    const raw =
-      initialCodigoParam ||
-      new URLSearchParams(window.location.search).get('codigo') ||
-      '';
-    return parseCodigoTicketInput(raw);
+    try {
+      const raw =
+        initialCodigoParam ||
+        new URLSearchParams(window.location.search).get('codigo') ||
+        '';
+      const num = extractSafeCodeNumber(raw);
+      return !Number.isNaN(num) && num > 0 ? num : null;
+    } catch {
+      return null;
+    }
   });
 
   const [ticketResult, setTicketResult] = useState<PublicTicketTI | null>(null);
@@ -91,44 +115,68 @@ export const ConsultarTicketView: React.FC<ConsultarTicketViewProps> = ({
   const [inputError, setInputError] = useState<string>('');
 
   const executeLookup = useCallback(async (num: number, updateUrl = true) => {
+    if (typeof num !== 'number' || Number.isNaN(num) || num <= 0) {
+      setInputError('Código inválido. Verifique el número de ticket ingresado.');
+      setTicketResult(null);
+      setHasSearched(false);
+      return;
+    }
+
     setIsSearching(true);
     setInputError('');
     setSearchedCodeNum(num);
 
     const formatted = formatCodigoTicket(num);
     if (updateUrl) {
-      const nextUrl = `/consultar?codigo=${encodeURIComponent(formatted)}`;
-      if (window.location.pathname + window.location.search !== nextUrl) {
-        window.history.replaceState({}, '', nextUrl);
+      try {
+        const nextUrl = `/consultar?codigo=${encodeURIComponent(formatted)}`;
+        if (window.location.pathname + window.location.search !== nextUrl) {
+          window.history.replaceState({}, '', nextUrl);
+        }
+      } catch {
+        // Ignorar si history.replaceState está restringido
       }
     }
 
     try {
       const res = await fetchPublicTicketByCodigo(num);
-      setTicketResult(res.ticket);
+      setTicketResult(res?.ticket ?? null);
+      setHasSearched(true);
+    } catch (err) {
+      console.error('Error al consultar ticket:', err);
+      setTicketResult(null);
       setHasSearched(true);
     } finally {
       setIsSearching(false);
     }
   }, []);
 
-  // Si viene un código en la URL (?codigo=FER-TI-0014), cargarlo automáticamente al entrar
+  // Lectura defensiva del parámetro ?codigo=FER-TI-002 al montar o cambiar prop
   useEffect(() => {
-    const paramCode =
-      initialCodigoParam ||
-      new URLSearchParams(window.location.search).get('codigo');
-    if (paramCode) {
-      setQueryInput(paramCode);
-      const parsed = parseCodigoTicketInput(paramCode);
-      if (parsed !== null) {
-        void executeLookup(parsed, false);
+    try {
+      const paramCode =
+        initialCodigoParam ||
+        new URLSearchParams(window.location.search).get('codigo');
+
+      if (paramCode && paramCode.trim()) {
+        setQueryInput(paramCode);
+        const num = extractSafeCodeNumber(paramCode);
+        if (!Number.isNaN(num) && num > 0) {
+          void executeLookup(num, false);
+        } else {
+          setInputError('Código inválido en el enlace. Ingrese un código válido (ej. FER-TI-002 o 2).');
+          setTicketResult(null);
+          setHasSearched(false);
+        }
       }
+    } catch (err) {
+      console.warn('Error leyendo parámetro URL en ConsultarTicketView:', err);
     }
   }, [initialCodigoParam, executeLookup]);
 
-  // Suscripción en tiempo real: si el ingeniero actualiza estado o nota_publica, el usuario lo ve al instante
+  // Suscripción en tiempo real: si cambia el ticket consultado, refrescar sin recargar
   useEffect(() => {
-    if (searchedCodeNum === null) return;
+    if (searchedCodeNum === null || Number.isNaN(searchedCodeNum)) return;
     const unsubscribe = subscribeToTicketsTI(() => {
       void executeLookup(searchedCodeNum, false);
     });
@@ -139,28 +187,58 @@ export const ConsultarTicketView: React.FC<ConsultarTicketViewProps> = ({
     e.preventDefault();
     setInputError('');
 
-    const parsed = parseCodigoTicketInput(queryInput);
-    if (parsed === null) {
+    const num = extractSafeCodeNumber(queryInput);
+    if (Number.isNaN(num) || num <= 0) {
       setInputError(
-        'Ingrese un código válido (ejemplo: FER-TI-0014 o únicamente el número 14).'
+        'Código inválido. Ingrese el código completo (ej. FER-TI-0014) o únicamente el número (ej. 14).'
       );
       setTicketResult(null);
       setHasSearched(false);
       return;
     }
 
-    await executeLookup(parsed, true);
+    await executeLookup(num, true);
   };
 
-  const stepIndex = ticketResult ? getActiveStepIndex(ticketResult.estado) : 0;
-  const isWaitingThirdParty =
-    ticketResult?.estado === 'Esperando Proveedor/Tercero';
-  const ubicacion = ticketResult
-    ? parseUbicacion(ticketResult.departamento_tienda)
-    : null;
-  const prioridadMeta = ticketResult
-    ? getPrioridadMeta(ticketResult.score_prioridad)
-    : null;
+  // ==========================================================================
+  // PROGRAMACIÓN DEFENSIVA ESTRICTA PARA TODAS LAS PROPIEDADES DEL TICKET
+  // ==========================================================================
+  const ticket = ticketResult;
+  const imagenes = Array.isArray(ticket?.imagenes_urls)
+    ? ticket.imagenes_urls.filter(
+        (u): u is string => typeof u === 'string' && u.trim().length > 0
+      )
+    : [];
+  const extras =
+    ticket?.respuestas_extra &&
+    typeof ticket.respuestas_extra === 'object' &&
+    !Array.isArray(ticket.respuestas_extra)
+      ? ticket.respuestas_extra
+      : {};
+  const extrasEntries = Object.entries(extras);
+  const estadoActual = ticket?.estado || 'Bandeja de Entrada';
+  const notaPublica =
+    typeof ticket?.nota_publica === 'string' ? ticket.nota_publica : '';
+  const fechaCreacion = ticket?.created_at
+    ? formatSafeDateTime(ticket.created_at, 'Sin fecha')
+    : 'Sin fecha';
+  const fechaActualizacion = ticket?.updated_at
+    ? formatSafeDateTime(ticket.updated_at, fechaCreacion)
+    : fechaCreacion;
+  const fechaResolucion = ticket?.fecha_resolucion
+    ? formatSafeDateTime(ticket.fecha_resolucion, '')
+    : '';
+
+  const stepIndex = getSafeStepIndex(estadoActual);
+  const isWaitingThirdParty = estadoActual === 'Esperando Proveedor/Tercero';
+  const ubicacion = parseUbicacion(ticket?.departamento_tienda);
+  const prioridadMeta = getPrioridadMeta(ticket?.score_prioridad ?? 1);
+  const codigoMostrado = formatCodigoTicket(ticket?.codigo_ticket);
+  const tipoSolicitud = ticket?.tipo_solicitud || 'Soporte Técnico / TI';
+  const tituloMostrado = ticket?.titulo || 'Requerimiento registrado';
+  const solicitanteMostrado = ticket?.solicitante_nombre || 'Usuario Solicitante';
+  const categoriaMostrada = ticket?.categoria || 'General';
+  const asignadoMostrado = ticket?.asignado_a || 'Luis Lugo - Analista BI/TI';
 
   return (
     <div className="mx-auto max-w-4xl space-y-4 py-1 pb-20 lg:pb-8">
@@ -236,9 +314,10 @@ export const ConsultarTicketView: React.FC<ConsultarTicketViewProps> = ({
 
           <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
             <span>
-              Puede escribir <code className="font-mono font-semibold text-slate-700">FER-TI-002</code>,{' '}
-              <code className="font-mono font-semibold text-slate-700">fer-ti-2</code> o directamente{' '}
-              <code className="font-mono font-semibold text-slate-700">2</code>.
+              Puede escribir{' '}
+              <code className="font-mono font-semibold text-slate-700">FER-TI-002</code>,{' '}
+              <code className="font-mono font-semibold text-slate-700">fer-ti-2</code> o
+              directamente <code className="font-mono font-semibold text-slate-700">2</code>.
             </span>
           </div>
 
@@ -254,7 +333,7 @@ export const ConsultarTicketView: React.FC<ConsultarTicketViewProps> = ({
       </search>
 
       {/* 3. ALERTA SOBRIA SI EL CÓDIGO NO EXISTE */}
-      {hasSearched && !isSearching && !ticketResult && (
+      {hasSearched && !isSearching && !ticket && (
         <div
           role="status"
           aria-live="polite"
@@ -290,11 +369,9 @@ export const ConsultarTicketView: React.FC<ConsultarTicketViewProps> = ({
       )}
 
       {/* 4. TARJETA ESTRUCTURADA DE SEGUIMIENTO DEL TICKET ENCONTRADO */}
-      {ticketResult && (
+      {ticket && (
         <article
-          aria-label={`Estado del ticket ${formatCodigoTicket(
-            ticketResult.codigo_ticket
-          )}`}
+          aria-label={`Estado del ticket ${codigoMostrado}`}
           className="overflow-hidden rounded-md border border-slate-300 bg-white shadow-xs"
         >
           {/* Cabecera del Ticket */}
@@ -302,21 +379,19 @@ export const ConsultarTicketView: React.FC<ConsultarTicketViewProps> = ({
             <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="rounded-sm border border-blue-200 bg-blue-50 px-2.5 py-1 font-mono text-sm font-bold text-blue-800">
-                  {formatCodigoTicket(ticketResult.codigo_ticket)}
+                  {codigoMostrado}
                 </span>
 
                 <span className="rounded-sm border border-slate-300 bg-white px-2.5 py-1 text-xs font-bold uppercase text-slate-700">
-                  {ticketResult.tipo_solicitud || 'Soporte Técnico / TI'}
+                  {tipoSolicitud}
                 </span>
 
-                {prioridadMeta && (
-                  <span
-                    className={`inline-flex items-center gap-1.5 rounded-sm px-2.5 py-1 text-xs font-bold ${prioridadMeta.badgeClass}`}
-                  >
-                    <span className={`h-2 w-2 rounded-sm ${prioridadMeta.dotClass}`} />
-                    Prioridad {prioridadMeta.nivel}
-                  </span>
-                )}
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded-sm px-2.5 py-1 text-xs font-bold ${prioridadMeta.badgeClass}`}
+                >
+                  <span className={`h-2 w-2 rounded-sm ${prioridadMeta.dotClass}`} />
+                  Prioridad {prioridadMeta.nivel}
+                </span>
               </div>
 
               <button
@@ -332,7 +407,7 @@ export const ConsultarTicketView: React.FC<ConsultarTicketViewProps> = ({
             </div>
 
             <h3 className="mt-2.5 text-base font-bold text-slate-900 sm:text-lg">
-              {ticketResult.titulo}
+              {tituloMostrado}
             </h3>
 
             {/* Fechas de registro y última actualización */}
@@ -341,13 +416,7 @@ export const ConsultarTicketView: React.FC<ConsultarTicketViewProps> = ({
                 <Calendar className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
                 <span>Registrado:</span>
                 <strong className="font-semibold text-slate-800">
-                  {new Date(ticketResult.created_at).toLocaleString('es-VE', {
-                    day: '2-digit',
-                    month: 'short',
-                    year: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
+                  {fechaCreacion}
                 </strong>
               </span>
 
@@ -355,15 +424,7 @@ export const ConsultarTicketView: React.FC<ConsultarTicketViewProps> = ({
                 <Clock className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
                 <span>Última actualización:</span>
                 <strong className="font-semibold text-slate-800">
-                  {new Date(
-                    ticketResult.updated_at || ticketResult.created_at
-                  ).toLocaleString('es-VE', {
-                    day: '2-digit',
-                    month: 'short',
-                    year: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
+                  {fechaActualizacion}
                 </strong>
               </span>
             </div>
@@ -377,7 +438,7 @@ export const ConsultarTicketView: React.FC<ConsultarTicketViewProps> = ({
                   Progreso de Atención del Requerimiento
                 </span>
                 <span className="rounded-sm border border-slate-300 bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-900">
-                  Estado actual: {ticketResult.estado}
+                  Estado actual: {estadoActual}
                 </span>
               </div>
 
@@ -405,17 +466,16 @@ export const ConsultarTicketView: React.FC<ConsultarTicketViewProps> = ({
                 </div>
               )}
 
-              {/* Stepper: Vertical en móvil (flex-col), Horizontal en PC (sm:grid-cols-4) */}
+              {/* Stepper: Vertical en móvil (grid-cols-1), Horizontal en PC (sm:grid-cols-4) */}
               <ol
                 aria-label="Hitos de progreso del ticket"
                 className="grid grid-cols-1 gap-2 sm:grid-cols-4"
               >
                 {STEPPER_HITOS.map((hito, idx) => {
                   const isCompleted =
-                    idx < stepIndex ||
-                    (idx === 3 && ticketResult.estado === 'Resuelto');
+                    idx < stepIndex || (idx === 3 && estadoActual === 'Resuelto');
                   const isCurrent =
-                    idx === stepIndex && ticketResult.estado !== 'Resuelto';
+                    idx === stepIndex && estadoActual !== 'Resuelto';
                   const isCurrentWaiting = isCurrent && isWaitingThirdParty;
 
                   let boxClasses =
@@ -475,15 +535,15 @@ export const ConsultarTicketView: React.FC<ConsultarTicketViewProps> = ({
             </div>
 
             {/* RECUADRO DESTACADO: ACTUALIZACIÓN / RESPUESTA DEL EQUIPO BI/TI (ÚNICAMENTE NOTA_PUBLICA) */}
-            <div className="rounded-sm border-l-4 border- border-slate-200 border-l-blue-700 bg-slate-50 p-4">
+            <div className="rounded-sm border border-slate-200 border-l-4 border-l-blue-700 bg-slate-50 p-4">
               <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-blue-800">
                 <MessageSquareText className="h-4 w-4 text-blue-700" aria-hidden="true" />
                 <span>Actualización / Respuesta del Equipo BI/TI</span>
               </div>
 
-              {ticketResult.nota_publica && ticketResult.nota_publica.trim().length > 0 ? (
+              {notaPublica.trim().length > 0 ? (
                 <p className="mt-2 whitespace-pre-wrap text-sm font-medium leading-relaxed text-slate-900">
-                  {ticketResult.nota_publica}
+                  {notaPublica}
                 </p>
               ) : (
                 <p className="mt-2 text-xs italic leading-relaxed text-slate-600">
@@ -501,8 +561,8 @@ export const ConsultarTicketView: React.FC<ConsultarTicketViewProps> = ({
                   <span>Especialista Asignado</span>
                 </dt>
                 <dd className="mt-1.5 flex items-center gap-2 font-bold text-slate-900">
-                  <SpecialistBadge nombre={ticketResult.asignado_a} size="sm" />
-                  <span>{ticketResult.asignado_a}</span>
+                  <SpecialistBadge nombre={asignadoMostrado} size="sm" />
+                  <span>{asignadoMostrado}</span>
                 </dd>
               </div>
 
@@ -512,16 +572,14 @@ export const ConsultarTicketView: React.FC<ConsultarTicketViewProps> = ({
                   <span>Solicitante y Ubicación</span>
                 </dt>
                 <dd className="mt-1 font-bold text-slate-900">
-                  {ticketResult.solicitante_nombre}
+                  {solicitanteMostrado}
                 </dd>
-                {ubicacion && (
-                  <dd className="mt-0.5 text-[11px] text-slate-600">
-                    {ubicacion.departamento}
-                    {ubicacion.sede !== 'N/A (Oficina / No aplica)'
-                      ? ` • ${ubicacion.sede}`
-                      : ''}
-                  </dd>
-                )}
+                <dd className="mt-0.5 text-[11px] text-slate-600">
+                  {ubicacion.departamento}
+                  {ubicacion.sede !== 'N/A (Oficina / No aplica)'
+                    ? ` • ${ubicacion.sede}`
+                    : ''}
+                </dd>
               </div>
 
               <div className="rounded-sm border border-slate-200 bg-white p-3">
@@ -530,16 +588,67 @@ export const ConsultarTicketView: React.FC<ConsultarTicketViewProps> = ({
                   <span>Categoría / Módulo</span>
                 </dt>
                 <dd className="mt-1 font-bold text-slate-900">
-                  {ticketResult.categoria}
+                  {categoriaMostrada}
                 </dd>
-                {ticketResult.fecha_resolucion && (
+                {fechaResolucion && (
                   <dd className="mt-0.5 text-[11px] font-semibold text-emerald-700">
-                    Resuelto el{' '}
-                    {new Date(ticketResult.fecha_resolucion).toLocaleDateString('es-VE')}
+                    Resuelto: {fechaResolucion}
                   </dd>
                 )}
               </div>
             </dl>
+
+            {/* Respuestas adicionales del formulario si existen */}
+            {extrasEntries.length > 0 && (
+              <div className="rounded-sm border border-slate-200 bg-slate-50 p-3">
+                <div className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-700">
+                  <ClipboardList className="h-3.5 w-3.5 text-blue-700" aria-hidden="true" />
+                  <span>Datos Adicionales Registrados</span>
+                </div>
+                <dl className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
+                  {extrasEntries.map(([k, v]) => (
+                    <div
+                      key={k}
+                      className="rounded-sm border border-slate-200 bg-white px-2.5 py-1.5"
+                    >
+                      <dt className="text-[10px] font-semibold uppercase text-slate-500">
+                        {k}
+                      </dt>
+                      <dd className="mt-0.5 font-semibold text-slate-900">
+                        {typeof v === 'boolean' ? (v ? 'Sí' : 'No') : String(v ?? '')}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            )}
+
+            {/* Miniaturas de evidencias si el usuario adjuntó fotos */}
+            {imagenes.length > 0 && (
+              <div className="rounded-sm border border-slate-200 bg-slate-50 p-3">
+                <div className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-700">
+                  <ImageIcon className="h-3.5 w-3.5 text-blue-700" aria-hidden="true" />
+                  <span>Evidencias Adjuntas ({imagenes.length})</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {imagenes.map((url, i) => (
+                    <a
+                      key={`${url}-${i}`}
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block overflow-hidden rounded-sm border border-slate-300 bg-white p-1 hover:border-blue-700"
+                    >
+                      <img
+                        src={url}
+                        alt={`Evidencia ${i + 1}`}
+                        className="h-20 w-full object-cover"
+                      />
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </article>
       )}

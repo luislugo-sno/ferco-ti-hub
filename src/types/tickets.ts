@@ -129,9 +129,11 @@ export const EQUIPO_TI_BI: AsignadoA[] = [
   'Plinio Becerra - Analista de Soluciones de Negocio',
 ];
 
-export function normalizeAsignadoA(raw?: string | null): AsignadoA {
-  if (!raw) return DEFAULT_ASIGNADO;
-  if (raw.startsWith('Juan García')) return 'Juan García - Gerente BI/TI';
+export function normalizeAsignadoA(raw?: unknown): AsignadoA {
+  if (typeof raw !== 'string' || !raw.trim()) return DEFAULT_ASIGNADO;
+  if (raw.startsWith('Juan García') || raw.startsWith('Juan Garcia')) {
+    return 'Juan García - Gerente BI/TI';
+  }
   if (raw.startsWith('Leonardo Sempr')) {
     return 'Leonardo Semprun - Especialista de Soluciones de Negocio';
   }
@@ -410,56 +412,60 @@ export const DEFAULT_FORM_SCHEMA: FormSchemaConfig = {
   preguntas_personalizadas: [],
 };
 
-export function getSedeMeta(valorSede: string): SedeComercialItem {
-  const found = CATALOGO_SEDES_DETALLE.find((s) => s.valor === valorSede);
+export function getSedeMeta(valorSede?: string | null): SedeComercialItem {
+  const safeVal =
+    typeof valorSede === 'string' && valorSede.trim()
+      ? valorSede.trim()
+      : 'N/A (Oficina / No aplica)';
+  const found = CATALOGO_SEDES_DETALLE.find((s) => s.valor === safeVal);
   if (found) return found;
 
   let grupo: SedeComercialItem['grupo'] = 'General / Corporativo';
   if (
-    valorSede.toUpperCase().startsWith('SNÖ') ||
-    valorSede.toUpperCase().startsWith('SNO')
+    safeVal.toUpperCase().startsWith('SNÖ') ||
+    safeVal.toUpperCase().startsWith('SNO')
   ) {
     grupo = 'Tiendas SNÖ';
   } else if (
-    valorSede.toLowerCase().includes('chönkies') ||
-    valorSede.toLowerCase().includes('chonkies')
+    safeVal.toLowerCase().includes('chönkies') ||
+    safeVal.toLowerCase().includes('chonkies')
   ) {
     grupo = 'Tiendas Chönkies';
-  } else if (valorSede.startsWith('CDP') || valorSede.startsWith('CDA')) {
+  } else if (safeVal.startsWith('CDP') || safeVal.startsWith('CDA')) {
     grupo = 'Centros Logísticos (CDP / CDA)';
   }
 
-  const nombreCorto = valorSede.includes(' (')
-    ? valorSede.split(' (')[0].trim()
-    : valorSede;
+  const nombreCorto = safeVal.includes(' (')
+    ? safeVal.split(' (')[0].trim()
+    : safeVal;
 
   return {
-    valor: valorSede,
+    valor: safeVal,
     nombreCorto,
     grupo,
   };
 }
 
-export function composeUbicacion(departamento: string, sede: string): string {
-  const dep = departamento.trim();
-  const sed = sede.trim();
+export function composeUbicacion(departamento?: string | null, sede?: string | null): string {
+  const dep = typeof departamento === 'string' && departamento.trim() ? departamento.trim() : 'ADMINISTRACIÓN';
+  const sed = typeof sede === 'string' ? sede.trim() : '';
   if (!sed || sed === 'N/A (Oficina / No aplica)') {
     return dep;
   }
   return `${dep} | ${sed}`;
 }
 
-export function parseUbicacion(departamentoTienda: string): {
+export function parseUbicacion(departamentoTienda?: unknown): {
   departamento: string;
   sede: string;
 } {
-  if (!departamentoTienda) {
+  if (typeof departamentoTienda !== 'string' || !departamentoTienda.trim()) {
     return { departamento: 'ADMINISTRACIÓN', sede: 'N/A (Oficina / No aplica)' };
   }
   if (departamentoTienda.includes(' | ')) {
     const [dep, ...rest] = departamentoTienda.split(' | ');
     return {
-      departamento: dep.trim(),
+      departamento: (dep || 'ADMINISTRACIÓN').trim(),
       sede: rest.join(' | ').trim() || 'N/A (Oficina / No aplica)',
     };
   }
@@ -505,43 +511,73 @@ export const URGENCIA_LABELS: Record<NivelUrgencia, { corto: string; detalle: st
   },
 };
 
-export function formatCodigoTicket(num?: number | null): string {
-  if (num === undefined || num === null || Number.isNaN(Number(num))) {
+export function formatCodigoTicket(num?: unknown): string {
+  const parsed = Number(num);
+  if (num === undefined || num === null || Number.isNaN(parsed) || parsed <= 0) {
     return 'FER-TI-000';
   }
-  return `FER-TI-${String(num).padStart(3, '0')}`;
+  return `FER-TI-${String(Math.floor(parsed)).padStart(3, '0')}`;
 }
 
 /**
- * Normaliza entradas como "FER-TI-0014", "fer-ti-14", "0014" o "14" al número entero 14
+ * Extrae el número entero de forma segura (ej. "FER-TI-002" -> 2).
+ * Si no contiene dígitos válidos o es NaN, devuelve null sin lanzar excepciones.
  */
-export function parseCodigoTicketInput(input: string): number | null {
-  if (!input || !input.trim()) return null;
-  const cleaned = input.trim().toUpperCase();
-  const digitsMatch = cleaned.match(/(\d+)$/);
-  if (!digitsMatch) return null;
-  const parsed = parseInt(digitsMatch[1], 10);
-  if (Number.isNaN(parsed) || parsed <= 0) return null;
-  return parsed;
+export function parseCodigoTicketInput(input?: unknown): number | null {
+  if (typeof input === 'number') {
+    return !Number.isNaN(input) && input > 0 ? Math.floor(input) : null;
+  }
+  if (typeof input !== 'string' || !input.trim()) return null;
+  const digitsOnly = input.replace(/\D/g, '');
+  if (!digitsOnly) return null;
+  const num = parseInt(digitsOnly, 10);
+  if (Number.isNaN(num) || num <= 0) return null;
+  return num;
 }
 
-export function getPrioridadMeta(score: number): {
+/**
+ * Formatea una fecha ISO de forma 100% defensiva sin colapsar si el valor es nulo o inválido
+ */
+export function formatSafeDateTime(dateInput?: unknown, fallback = 'Sin fecha'): string {
+  if (typeof dateInput !== 'string' || !dateInput.trim()) return fallback;
+  try {
+    const d = new Date(dateInput);
+    if (Number.isNaN(d.getTime())) return fallback;
+    return d.toLocaleString('es-VE', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    try {
+      const d = new Date(dateInput);
+      return Number.isNaN(d.getTime()) ? fallback : d.toLocaleString();
+    } catch {
+      return fallback;
+    }
+  }
+}
+
+export function getPrioridadMeta(score?: unknown): {
   nivel: 'Crítico' | 'Medio' | 'Bajo';
   codigoSLA: 'P1 Crítico' | 'P2 Alto' | 'P3 Medio' | 'P4 Bajo';
   badgeClass: string;
   dotClass: string;
   borderClass: string;
 } {
-  if (score >= 6) {
+  const numScore = Number(score) || 1;
+  if (numScore >= 6) {
     return {
       nivel: 'Crítico',
-      codigoSLA: score === 9 ? 'P1 Crítico' : 'P2 Alto',
+      codigoSLA: numScore >= 9 ? 'P1 Crítico' : 'P2 Alto',
       badgeClass: 'bg-red-50 text-red-800 border border-red-300',
       dotClass: 'bg-red-600',
       borderClass: 'border-l-4 border-l-red-600',
     };
   }
-  if (score >= 3) {
+  if (numScore >= 3) {
     return {
       nivel: 'Medio',
       codigoSLA: 'P3 Medio',
@@ -559,15 +595,24 @@ export function getPrioridadMeta(score: number): {
   };
 }
 
-export function getHorasSinMoverse(ticket: Pick<TicketTI, 'updated_at' | 'created_at'>): number {
-  const refDate = ticket.updated_at || ticket.created_at;
+export function getHorasSinMoverse(
+  ticket?: Pick<TicketTI, 'updated_at' | 'created_at'> | null
+): number {
+  const refDate = ticket?.updated_at || ticket?.created_at;
   if (!refDate) return 0;
-  const diffMs = Date.now() - new Date(refDate).getTime();
-  return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60)));
+  try {
+    const timeMs = new Date(refDate).getTime();
+    if (Number.isNaN(timeMs)) return 0;
+    const diffMs = Date.now() - timeMs;
+    return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60)));
+  } catch {
+    return 0;
+  }
 }
 
 export function estaEstancadoProveedor(
-  ticket: Pick<TicketTI, 'estado' | 'updated_at' | 'created_at'>
+  ticket?: Pick<TicketTI, 'estado' | 'updated_at' | 'created_at'> | null
 ): boolean {
+  if (!ticket) return false;
   return ticket.estado === 'Esperando Proveedor/Tercero' && getHorasSinMoverse(ticket) >= 48;
 }

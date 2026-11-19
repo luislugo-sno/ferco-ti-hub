@@ -182,19 +182,78 @@ const SEED_TICKETS: TicketTI[] = [
   },
 ];
 
-function normalizeTicketsList(list: TicketTI[]): TicketTI[] {
-  return list.map((t) => ({
-    ...t,
-    tipo_solicitud: t.tipo_solicitud || 'Soporte Técnico / TI',
+function normalizeSingleTicket(raw: Partial<TicketTI> | null | undefined): TicketTI {
+  const t = raw || {};
+  const imp = (Number(t.impacto) >= 1 && Number(t.impacto) <= 3 ? Number(t.impacto) : 1) as 1 | 2 | 3;
+  const urg = (Number(t.urgencia) >= 1 && Number(t.urgencia) <= 3 ? Number(t.urgencia) : 1) as 1 | 2 | 3;
+  const score = Number(t.score_prioridad) > 0 ? Number(t.score_prioridad) : imp * urg;
+
+  return {
+    id: typeof t.id === 'string' && t.id ? t.id : `ticket-${t.codigo_ticket || Date.now()}`,
+    codigo_ticket: Number(t.codigo_ticket) || 0,
+    created_at:
+      typeof t.created_at === 'string' && t.created_at
+        ? t.created_at
+        : new Date().toISOString(),
+    updated_at:
+      typeof t.updated_at === 'string' && t.updated_at
+        ? t.updated_at
+        : typeof t.created_at === 'string' && t.created_at
+        ? t.created_at
+        : new Date().toISOString(),
+    tipo_solicitud:
+      t.tipo_solicitud === 'Consultas sobre Odoo'
+        ? 'Consultas sobre Odoo'
+        : 'Soporte Técnico / TI',
+    solicitante_nombre:
+      typeof t.solicitante_nombre === 'string' && t.solicitante_nombre.trim()
+        ? t.solicitante_nombre.trim()
+        : 'Solicitante',
+    departamento_tienda:
+      typeof t.departamento_tienda === 'string' && t.departamento_tienda.trim()
+        ? t.departamento_tienda.trim()
+        : 'ADMINISTRACIÓN',
+    categoria:
+      typeof t.categoria === 'string' && t.categoria.trim()
+        ? t.categoria.trim()
+        : 'Soporte General',
+    titulo:
+      typeof t.titulo === 'string' && t.titulo.trim()
+        ? t.titulo.trim()
+        : 'Requerimiento sin asunto',
+    descripcion: typeof t.descripcion === 'string' ? t.descripcion : '',
+    impacto: imp,
+    urgencia: urg,
+    score_prioridad: score,
+    estado:
+      t.estado === 'En Cola' ||
+      t.estado === 'En Progreso' ||
+      t.estado === 'Esperando Proveedor/Tercero' ||
+      t.estado === 'Resuelto'
+        ? t.estado
+        : 'Bandeja de Entrada',
     asignado_a: normalizeAsignadoA(t.asignado_a),
-    nota_publica: t.nota_publica ?? '',
-    score_prioridad: t.score_prioridad ?? t.impacto * t.urgencia,
-    imagenes_urls: Array.isArray(t.imagenes_urls) ? t.imagenes_urls : [],
+    nota_publica: typeof t.nota_publica === 'string' ? t.nota_publica : '',
+    notas_tecnicas: typeof t.notas_tecnicas === 'string' ? t.notas_tecnicas : '',
+    fecha_resolucion:
+      typeof t.fecha_resolucion === 'string' ? t.fecha_resolucion : null,
+    imagenes_urls: Array.isArray(t.imagenes_urls)
+      ? t.imagenes_urls.filter((u): u is string => typeof u === 'string' && u.length > 0)
+      : [],
     respuestas_extra:
-      t.respuestas_extra && typeof t.respuestas_extra === 'object'
+      t.respuestas_extra &&
+      typeof t.respuestas_extra === 'object' &&
+      !Array.isArray(t.respuestas_extra)
         ? t.respuestas_extra
         : {},
-  }));
+  };
+}
+
+function normalizeTicketsList(list: unknown): TicketTI[] {
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((item): item is Partial<TicketTI> => Boolean(item && typeof item === 'object'))
+    .map((item) => normalizeSingleTicket(item));
 }
 
 function getLocalTickets(): TicketTI[] {
@@ -231,11 +290,12 @@ function saveLocalTickets(tickets: TicketTI[], newlyCreated?: TicketTI): void {
 /**
  * Sanitiza un TicketTI eliminando estrictamente notas_tecnicas para el Portal Público
  */
-export function sanitizePublicTicket(ticket: TicketTI): PublicTicketTI {
-  const { notas_tecnicas: _privateNotes, ...publicFields } = ticket;
+export function sanitizePublicTicket(ticket: Partial<TicketTI> | null | undefined): PublicTicketTI {
+  const normalized = normalizeSingleTicket(ticket);
+  const { notas_tecnicas: _privateNotes, ...publicFields } = normalized;
   return {
     ...publicFields,
-    nota_publica: ticket.nota_publica ?? '',
+    nota_publica: normalized.nota_publica ?? '',
   };
 }
 
@@ -246,53 +306,37 @@ export function sanitizePublicTicket(ticket: TicketTI): PublicTicketTI {
 export async function fetchPublicTicketByCodigo(
   codigoNumero: number
 ): Promise<{ ticket: PublicTicketTI | null; mode: 'supabase' | 'local' }> {
+  const safeNum = Number(codigoNumero);
+  if (Number.isNaN(safeNum) || safeNum <= 0) {
+    return { ticket: null, mode: supabase ? 'supabase' : 'local' };
+  }
+
   if (supabase) {
     try {
       const { data, error } = await supabase
         .from('tickets_ti')
-        .select(
-          'id, codigo_ticket, created_at, updated_at, tipo_solicitud, solicitante_nombre, departamento_tienda, categoria, titulo, descripcion, impacto, urgencia, score_prioridad, estado, asignado_a, nota_publica, fecha_resolucion, imagenes_urls, respuestas_extra'
-        )
-        .eq('codigo_ticket', codigoNumero)
+        .select('*')
+        .eq('codigo_ticket', safeNum)
         .maybeSingle();
 
       if (!error && data) {
-        const normalized = normalizeTicketsList([data as TicketTI])[0];
         return {
-          ticket: sanitizePublicTicket(normalized),
+          ticket: sanitizePublicTicket(data as Partial<TicketTI>),
           mode: 'supabase',
         };
-      }
-
-      // Fallback si la tabla aún no tiene las columnas nuevas en Supabase
-      if (error) {
-        const retry = await supabase
-          .from('tickets_ti')
-          .select(
-            'id, codigo_ticket, created_at, updated_at, solicitante_nombre, departamento_tienda, categoria, titulo, descripcion, impacto, urgencia, score_prioridad, estado, asignado_a, fecha_resolucion'
-          )
-          .eq('codigo_ticket', codigoNumero)
-          .maybeSingle();
-
-        if (!retry.error && retry.data) {
-          const normalized = normalizeTicketsList([retry.data as TicketTI])[0];
-          return {
-            ticket: sanitizePublicTicket(normalized),
-            mode: 'supabase',
-          };
-        }
       }
 
       if (!error && !data) {
         return { ticket: null, mode: 'supabase' };
       }
+      console.warn('Error consultando ticket en Supabase, verificando local:', error?.message);
     } catch (err) {
       console.warn('Fallback a búsqueda local para Consultar mi Ticket:', err);
     }
   }
 
   const localList = getLocalTickets();
-  const found = localList.find((t) => Number(t.codigo_ticket) === codigoNumero);
+  const found = localList.find((t) => Number(t?.codigo_ticket) === safeNum);
   return {
     ticket: found ? sanitizePublicTicket(found) : null,
     mode: 'local',

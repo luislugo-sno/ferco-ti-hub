@@ -42,18 +42,22 @@ export const GcfVectorLogoSvg: React.FC<{ className?: string }> = ({
 );
 
 /**
- * Iniciales técnicas en formato cuadrado sobrio (estilo Jira / Odoo Enterprise)
+ * Iniciales técnicas en formato cuadrado sobrio con validación defensiva contra null/undefined
  */
 export const SpecialistBadge: React.FC<{
-  nombre: AsignadoA | string;
+  nombre?: AsignadoA | string | null;
   size?: 'sm' | 'md';
 }> = ({ nombre, size = 'sm' }) => {
-  const soloNombre = nombre.split(' - ')[0] || nombre;
+  const safeStr =
+    typeof nombre === 'string' && nombre.trim().length > 0
+      ? nombre.trim()
+      : 'Luis Lugo';
+  const soloNombre = safeStr.split(' - ')[0] || safeStr;
   const initials = soloNombre
     .split(' ')
     .filter(Boolean)
     .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase() || '')
+    .map((p) => (p && p[0] ? p[0].toUpperCase() : ''))
     .join('');
 
   const dim =
