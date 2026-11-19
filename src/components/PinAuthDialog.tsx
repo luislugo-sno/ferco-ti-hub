@@ -1,5 +1,10 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { LockKeyhole, Eye, EyeOff, ShieldAlert, KeyRound, X } from 'lucide-react';
+import {
+  fetchAdminPinFromSupabase,
+  getCachedAdminPin,
+  upsertAdminPinInSupabase,
+} from '../lib/supabase';
 
 interface PinAuthDialogProps {
   isOpen: boolean;
@@ -8,17 +13,17 @@ interface PinAuthDialogProps {
   onCancel: () => void;
 }
 
-const CUSTOM_PIN_STORAGE_KEY = 'ferco_admin_custom_pin';
-
 export function getExpectedPin(): string {
-  const custom = localStorage.getItem(CUSTOM_PIN_STORAGE_KEY);
-  if (custom && custom.trim().length >= 4) return custom.trim();
-  const envPin = import.meta.env.VITE_ADMIN_PIN as string | undefined;
-  return envPin && envPin.trim().length > 0 ? envPin.trim() : '1234';
+  return getCachedAdminPin();
 }
 
-export function setCustomPin(newPin: string): void {
-  localStorage.setItem(CUSTOM_PIN_STORAGE_KEY, newPin.trim());
+export async function updateGlobalPin(newPin: string): Promise<{
+  ok: boolean;
+  pin: string;
+  mode: 'supabase' | 'local';
+  error?: string;
+}> {
+  return upsertAdminPinInSupabase(newPin);
 }
 
 export const PinAuthDialog: React.FC<PinAuthDialogProps> = ({
@@ -37,6 +42,7 @@ export const PinAuthDialog: React.FC<PinAuthDialogProps> = ({
   const [pin, setPin] = useState('');
   const [showPin, setShowPin] = useState(false);
   const [error, setError] = useState('');
+  const [isVerifying, setIsVerifying] = useState(false);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -46,6 +52,7 @@ export const PinAuthDialog: React.FC<PinAuthDialogProps> = ({
       setPin('');
       setError('');
       dialog.showModal();
+      void fetchAdminPinFromSupabase();
       setTimeout(() => {
         inputRef.current?.focus();
       }, 30);
@@ -97,19 +104,25 @@ export const PinAuthDialog: React.FC<PinAuthDialogProps> = ({
     };
   }, [onCancel]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const expected = getExpectedPin();
-    if (pin.trim() === expected) {
-      setError('');
-      setPin('');
-      if (dialogRef.current?.open) {
-        dialogRef.current.close();
+    setIsVerifying(true);
+    setError('');
+
+    try {
+      const { pin: remotePin } = await fetchAdminPinFromSupabase();
+      if (pin.trim() === remotePin) {
+        setPin('');
+        if (dialogRef.current?.open) {
+          dialogRef.current.close();
+        }
+        onSuccess();
+      } else {
+        setError('PIN incorrecto. Verifique la credencial de acceso de la Gerencia BI/TI.');
+        inputRef.current?.focus();
       }
-      onSuccess();
-    } else {
-      setError('PIN incorrecto. Verifique la credencial de acceso de la Gerencia BI/TI.');
-      inputRef.current?.focus();
+    } finally {
+      setIsVerifying(false);
     }
   };
 
@@ -119,11 +132,11 @@ export const PinAuthDialog: React.FC<PinAuthDialogProps> = ({
       aria-labelledby={titleId}
       aria-describedby={descId}
       {...({ closedby: 'any' } as React.DialogHTMLAttributes<HTMLDialogElement>)}
-      className="m-auto w-full max-w-md rounded-md border border-slate-300 bg-white p-0 text-slate-900 shadow-lg open:flex open:flex-col"
+      className="m-auto w-[calc(100%-1.5rem)] max-w-md rounded-md border border-slate-300 bg-white p-0 text-slate-900 shadow-lg open:flex open:flex-col"
     >
-      <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-3.5">
+      <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3 sm:px-5 sm:py-3.5">
         <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-sm border border-blue-200 bg-blue-50 text-blue-700">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm border border-blue-200 bg-blue-50 text-blue-700">
             <LockKeyhole className="h-4 w-4" aria-hidden="true" />
           </div>
           <div>
@@ -131,7 +144,7 @@ export const PinAuthDialog: React.FC<PinAuthDialogProps> = ({
               Control de Acceso Operativo BI/TI
             </h2>
             <p className="text-[11px] text-slate-600">
-              Módulo solicitado: <span className="font-semibold text-blue-700">{targetName}</span>
+              Módulo: <span className="font-semibold text-blue-700">{targetName}</span>
             </p>
           </div>
         </div>
@@ -140,19 +153,19 @@ export const PinAuthDialog: React.FC<PinAuthDialogProps> = ({
           type="button"
           onClick={() => dialogRef.current?.close()}
           aria-label="Cerrar ventana de autenticación"
-          className="rounded-sm p-1 text-slate-500 transition hover:bg-slate-200 hover:text-slate-900"
+          className="rounded-sm p-1.5 text-slate-500 transition hover:bg-slate-200 hover:text-slate-900"
         >
           <X className="h-4 w-4" aria-hidden="true" />
         </button>
       </div>
 
-      <form onSubmit={handleSubmit} method="post" className="space-y-4 p-5">
+      <form onSubmit={handleSubmit} method="post" className="space-y-4 p-4 sm:p-5">
         <p id={descId} className="text-xs leading-relaxed text-slate-600">
-          Ingrese el PIN de autorización de la{' '}
+          Ingrese el PIN global sincronizado en Supabase de la{' '}
           <strong className="text-slate-900">
             Gerencia de Inteligencia de Negocios y Tecnología
-          </strong>{' '}
-          para acceder a la gestión de cola e indicadores.
+          </strong>
+          .
         </p>
 
         <div className="space-y-1">
@@ -186,15 +199,15 @@ export const PinAuthDialog: React.FC<PinAuthDialogProps> = ({
                 setPin(e.target.value);
                 if (error) setError('');
               }}
-              placeholder="PIN (Ej: 1234)"
-              className="h-10 w-full rounded-sm border border-slate-300 bg-white pl-9 pr-10 font-mono text-sm tracking-widest text-slate-900 placeholder:font-sans placeholder:text-xs placeholder:tracking-normal placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
+              placeholder="Ingrese PIN"
+              className="min-h-[44px] w-full rounded-sm border border-slate-300 bg-white pl-9 pr-11 font-mono text-base tracking-widest text-slate-900 placeholder:font-sans placeholder:text-sm placeholder:tracking-normal placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
             />
             <button
               type="button"
               aria-pressed={showPin}
               aria-label={showPin ? 'Ocultar PIN' : 'Mostrar PIN'}
               onClick={() => setShowPin((prev) => !prev)}
-              className="absolute right-2 rounded-sm p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+              className="absolute right-2 rounded-sm p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
             >
               {showPin ? (
                 <EyeOff className="h-4 w-4" aria-hidden="true" />
@@ -203,12 +216,6 @@ export const PinAuthDialog: React.FC<PinAuthDialogProps> = ({
               )}
             </button>
           </div>
-          <p className="text-[11px] text-slate-500">
-            PIN predeterminado:{' '}
-            <code className="rounded-sm border border-slate-200 bg-slate-100 px-1 py-0.5 font-mono text-slate-800">
-              1234
-            </code>
-          </p>
         </div>
 
         <div aria-live="polite">
@@ -223,19 +230,20 @@ export const PinAuthDialog: React.FC<PinAuthDialogProps> = ({
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t border-slate-200 pt-3">
+        <div className="flex flex-col-reverse gap-2 border-t border-slate-200 pt-3 sm:flex-row sm:items-center sm:justify-end">
           <button
             type="button"
             onClick={() => dialogRef.current?.close()}
-            className="rounded-sm border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+            className="min-h-[44px] w-full rounded-sm border border-slate-300 bg-white px-4 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 sm:h-9 sm:min-h-0 sm:w-auto"
           >
             Cancelar
           </button>
           <button
             type="submit"
-            className="rounded-sm bg-blue-700 px-4 py-2 text-xs font-bold text-white transition hover:bg-blue-800"
+            disabled={isVerifying}
+            className="min-h-[44px] w-full rounded-sm bg-blue-700 px-5 text-xs font-bold text-white transition hover:bg-blue-800 disabled:opacity-60 sm:h-9 sm:min-h-0 sm:w-auto"
           >
-            Autorizar Acceso
+            {isVerifying ? 'Verificando...' : 'Autorizar Acceso'}
           </button>
         </div>
       </form>

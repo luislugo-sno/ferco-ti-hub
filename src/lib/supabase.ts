@@ -1,6 +1,8 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import {
   DEFAULT_ASIGNADO,
+  DEFAULT_FORM_SCHEMA,
+  FormSchemaConfig,
   normalizeAsignadoA,
   NuevoTicketInput,
   TicketTI,
@@ -23,6 +25,8 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
   : null;
 
 const LOCAL_STORAGE_KEY = 'ferco_tickets_ti_v2';
+const LOCAL_PIN_STORAGE_KEY = 'ferco_admin_custom_pin';
+const LOCAL_FORM_SCHEMA_KEY = 'ferco_form_schema_v1';
 const BROADCAST_CHANNEL_NAME = 'ferco_tickets_ti_realtime_sync';
 
 const horasAtras = (horas: number): string =>
@@ -34,6 +38,7 @@ const SEED_TICKETS: TicketTI[] = [
     codigo_ticket: 1,
     created_at: horasAtras(74),
     updated_at: horasAtras(62),
+    tipo_solicitud: 'Soporte Técnico / TI',
     solicitante_nombre: 'Roberto Méndez',
     departamento_tienda: 'TIENDA | SNÖ Delicias (Grupo Ferco Maracaibo C.A. - Maracaibo)',
     categoria: 'Infraestructura / Redes / Starlink',
@@ -48,15 +53,18 @@ const SEED_TICKETS: TicketTI[] = [
     notas_tecnicas:
       'Se abrió ticket #ISP-99412 con el proveedor de fibra óptica. Failover automático en router MikroTik activo sobre antena Starlink.',
     fecha_resolucion: null,
+    imagenes_urls: [],
+    respuestas_extra: {},
   },
   {
     id: 'c8f92e10-1a2b-4c3d-8e9f-000000000002',
     codigo_ticket: 2,
     created_at: horasAtras(5),
     updated_at: horasAtras(2),
+    tipo_solicitud: 'Consultas sobre Odoo',
     solicitante_nombre: 'Gabriela Rojas',
     departamento_tienda: 'TIENDA | SNÖ Sambil (Operadora 1903 C.A. - Maracaibo)',
-    categoria: 'Odoo ERP / TPV Tiendas',
+    categoria: 'Punto de Venta / TPV',
     titulo: 'Diferencia en sincronización de sesión de Punto de Venta (Caja 03) en Odoo',
     descripcion:
       'Al intentar cerrar la sesión del TPV en Caja 03 aparece alerta de asiento descuadrado por nota de crédito en divisas IGTF.',
@@ -68,12 +76,15 @@ const SEED_TICKETS: TicketTI[] = [
     notas_tecnicas:
       'Revisando diarios de pago IGTF y conciliación de pos.order en Odoo. Validando con CONTABILIDAD antes de forzar cierre.',
     fecha_resolucion: null,
+    imagenes_urls: [],
+    respuestas_extra: {},
   },
   {
     id: 'c8f92e10-1a2b-4c3d-8e9f-000000000003',
     codigo_ticket: 3,
     created_at: horasAtras(18),
     updated_at: horasAtras(4),
+    tipo_solicitud: 'Soporte Técnico / TI',
     solicitante_nombre: 'Carlos Villamizar',
     departamento_tienda: 'GERENCIA',
     categoria: 'Business Intelligence / Reportes',
@@ -88,15 +99,18 @@ const SEED_TICKETS: TicketTI[] = [
     notas_tecnicas:
       'Vista materializada en PostgreSQL lista. Ajustando filtros por Razón Social y Municipio.',
     fecha_resolucion: null,
+    imagenes_urls: [],
+    respuestas_extra: {},
   },
   {
     id: 'c8f92e10-1a2b-4c3d-8e9f-000000000004',
     codigo_ticket: 4,
     created_at: horasAtras(9),
     updated_at: horasAtras(8),
+    tipo_solicitud: 'Consultas sobre Odoo',
     solicitante_nombre: 'Mariana Pérez',
     departamento_tienda: 'CADENA DE SUMINISTROS | CDP1',
-    categoria: 'Desarrollo / Automatización',
+    categoria: 'Compras',
     titulo: 'Automatizar carga masiva de listas de precios de proveedores vía plantilla Excel',
     descripcion:
       'Necesitamos asistente para actualizar costos de reposición sin editar línea por línea en acuerdos de compra de CDP1 y CDP2.',
@@ -107,12 +121,15 @@ const SEED_TICKETS: TicketTI[] = [
     asignado_a: 'Leonardo Semprun - Especialista de Soluciones de Negocio',
     notas_tecnicas: 'Se diseñará validador previo de SKU para evitar duplicados.',
     fecha_resolucion: null,
+    imagenes_urls: [],
+    respuestas_extra: {},
   },
   {
     id: 'c8f92e10-1a2b-4c3d-8e9f-000000000005',
     codigo_ticket: 5,
     created_at: horasAtras(1),
     updated_at: horasAtras(1),
+    tipo_solicitud: 'Soporte Técnico / TI',
     solicitante_nombre: 'Andrés Morales',
     departamento_tienda: 'RRHH',
     categoria: 'Accesos / Google Workspace',
@@ -126,12 +143,15 @@ const SEED_TICKETS: TicketTI[] = [
     asignado_a: 'Luis Lugo - Analista BI/TI',
     notas_tecnicas: '',
     fecha_resolucion: null,
+    imagenes_urls: [],
+    respuestas_extra: {},
   },
   {
     id: 'c8f92e10-1a2b-4c3d-8e9f-000000000006',
     codigo_ticket: 6,
     created_at: horasAtras(28),
     updated_at: horasAtras(6),
+    tipo_solicitud: 'Soporte Técnico / TI',
     solicitante_nombre: 'Elena Castillo',
     departamento_tienda: 'OPERACIONES | CDA-CCS',
     categoria: 'Hardware / Impresoras / Equipos',
@@ -146,14 +166,22 @@ const SEED_TICKETS: TicketTI[] = [
     notas_tecnicas:
       'Se calibró sensor de gap en Zebra ZD220 y se fijó perfil 50x25mm predeterminado en el servidor de impresión.',
     fecha_resolucion: horasAtras(6),
+    imagenes_urls: [],
+    respuestas_extra: {},
   },
 ];
 
 function normalizeTicketsList(list: TicketTI[]): TicketTI[] {
   return list.map((t) => ({
     ...t,
+    tipo_solicitud: t.tipo_solicitud || 'Soporte Técnico / TI',
     asignado_a: normalizeAsignadoA(t.asignado_a),
     score_prioridad: t.score_prioridad ?? t.impacto * t.urgencia,
+    imagenes_urls: Array.isArray(t.imagenes_urls) ? t.imagenes_urls : [],
+    respuestas_extra:
+      t.respuestas_extra && typeof t.respuestas_extra === 'object'
+        ? t.respuestas_extra
+        : {},
   }));
 }
 
@@ -188,6 +216,361 @@ function saveLocalTickets(tickets: TicketTI[], newlyCreated?: TicketTI): void {
   }
 }
 
+// ============================================================================
+// 1. PERSISTENCIA GLOBAL DE PIN EN SUPABASE (tabla app_config -> key: 'admin_pin')
+// ============================================================================
+
+export function getCachedAdminPin(): string {
+  try {
+    const custom = localStorage.getItem(LOCAL_PIN_STORAGE_KEY);
+    if (custom && custom.trim().length >= 4) return custom.trim();
+  } catch {
+    // ignore
+  }
+  const envPin = import.meta.env.VITE_ADMIN_PIN as string | undefined;
+  return envPin && envPin.trim().length > 0 ? envPin.trim() : '1234';
+}
+
+export async function fetchAdminPinFromSupabase(): Promise<{
+  pin: string;
+  mode: 'supabase' | 'local';
+}> {
+  const fallbackPin = getCachedAdminPin();
+
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('app_config')
+        .select('value')
+        .eq('key', 'admin_pin')
+        .maybeSingle();
+
+      if (!error && data?.value && typeof data.value === 'object') {
+        const remotePin = String((data.value as { pin?: string }).pin || '').trim();
+        if (remotePin.length >= 4) {
+          try {
+            localStorage.setItem(LOCAL_PIN_STORAGE_KEY, remotePin);
+          } catch {
+            // ignore
+          }
+          return { pin: remotePin, mode: 'supabase' };
+        }
+      }
+
+      // Si aún no existe la fila 'admin_pin' en app_config, inicializarla automáticamente
+      if (!error && !data) {
+        await supabase.from('app_config').upsert(
+          {
+            key: 'admin_pin',
+            value: { pin: fallbackPin },
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'key' }
+        );
+        return { pin: fallbackPin, mode: 'supabase' };
+      }
+    } catch (err) {
+      console.warn('No se pudo leer admin_pin desde Supabase app_config:', err);
+    }
+  }
+
+  return { pin: fallbackPin, mode: 'local' };
+}
+
+export async function upsertAdminPinInSupabase(newPin: string): Promise<{
+  ok: boolean;
+  pin: string;
+  mode: 'supabase' | 'local';
+  error?: string;
+}> {
+  const cleanPin = newPin.trim();
+  try {
+    localStorage.setItem(LOCAL_PIN_STORAGE_KEY, cleanPin);
+  } catch {
+    // ignore
+  }
+
+  if (typeof BroadcastChannel !== 'undefined') {
+    const bc = new BroadcastChannel(BROADCAST_CHANNEL_NAME);
+    bc.postMessage({ type: 'PIN_UPDATED', payload: cleanPin });
+    bc.close();
+  }
+
+  if (supabase) {
+    const { error } = await supabase.from('app_config').upsert(
+      {
+        key: 'admin_pin',
+        value: { pin: cleanPin },
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'key' }
+    );
+
+    if (!error) {
+      return { ok: true, pin: cleanPin, mode: 'supabase' };
+    }
+    return {
+      ok: true,
+      pin: cleanPin,
+      mode: 'local',
+      error: `Guardado en caché local (ejecute schema.sql en Supabase para crear app_config: ${error.message})`,
+    };
+  }
+
+  return { ok: true, pin: cleanPin, mode: 'local' };
+}
+
+// ============================================================================
+// 2. EDITOR DINÁMICO DE FORMULARIO EN SUPABASE (app_config -> key: 'form_schema')
+// ============================================================================
+
+function normalizeFormSchema(raw: unknown): FormSchemaConfig {
+  if (!raw || typeof raw !== 'object') return DEFAULT_FORM_SCHEMA;
+  const obj = raw as Partial<FormSchemaConfig>;
+
+  return {
+    departamentos:
+      Array.isArray(obj.departamentos) && obj.departamentos.length > 0
+        ? obj.departamentos
+        : [...DEFAULT_FORM_SCHEMA.departamentos],
+    sedes:
+      Array.isArray(obj.sedes) && obj.sedes.length > 0
+        ? obj.sedes
+        : [...DEFAULT_FORM_SCHEMA.sedes],
+    categorias_ti:
+      Array.isArray(obj.categorias_ti) && obj.categorias_ti.length > 0
+        ? obj.categorias_ti
+        : [...DEFAULT_FORM_SCHEMA.categorias_ti],
+    modulos_odoo:
+      Array.isArray(obj.modulos_odoo) && obj.modulos_odoo.length > 0
+        ? obj.modulos_odoo
+        : [...DEFAULT_FORM_SCHEMA.modulos_odoo],
+    preguntas_personalizadas: Array.isArray(obj.preguntas_personalizadas)
+      ? obj.preguntas_personalizadas
+      : [],
+  };
+}
+
+export function getCachedFormSchema(): FormSchemaConfig {
+  try {
+    const raw = localStorage.getItem(LOCAL_FORM_SCHEMA_KEY);
+    if (raw) {
+      return normalizeFormSchema(JSON.parse(raw));
+    }
+  } catch {
+    // ignore
+  }
+  return DEFAULT_FORM_SCHEMA;
+}
+
+export async function fetchFormSchemaFromSupabase(): Promise<{
+  schema: FormSchemaConfig;
+  mode: 'supabase' | 'local';
+}> {
+  const cached = getCachedFormSchema();
+
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('app_config')
+        .select('value')
+        .eq('key', 'form_schema')
+        .maybeSingle();
+
+      if (!error && data?.value) {
+        const normalized = normalizeFormSchema(data.value);
+        try {
+          localStorage.setItem(LOCAL_FORM_SCHEMA_KEY, JSON.stringify(normalized));
+        } catch {
+          // ignore
+        }
+        return { schema: normalized, mode: 'supabase' };
+      }
+
+      // Inicializar automáticamente en Supabase si aún no existe 'form_schema'
+      if (!error && !data) {
+        await supabase.from('app_config').upsert(
+          {
+            key: 'form_schema',
+            value: cached,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'key' }
+        );
+        return { schema: cached, mode: 'supabase' };
+      }
+    } catch (err) {
+      console.warn('No se pudo cargar form_schema desde Supabase:', err);
+    }
+  }
+
+  return { schema: cached, mode: 'local' };
+}
+
+export async function upsertFormSchemaInSupabase(
+  schema: FormSchemaConfig
+): Promise<{
+  ok: boolean;
+  schema: FormSchemaConfig;
+  mode: 'supabase' | 'local';
+  error?: string;
+}> {
+  const normalized = normalizeFormSchema(schema);
+  try {
+    localStorage.setItem(LOCAL_FORM_SCHEMA_KEY, JSON.stringify(normalized));
+  } catch {
+    // ignore
+  }
+
+  if (typeof BroadcastChannel !== 'undefined') {
+    const bc = new BroadcastChannel(BROADCAST_CHANNEL_NAME);
+    bc.postMessage({ type: 'FORM_SCHEMA_UPDATED', payload: normalized });
+    bc.close();
+  }
+
+  if (supabase) {
+    const { error } = await supabase.from('app_config').upsert(
+      {
+        key: 'form_schema',
+        value: normalized,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'key' }
+    );
+
+    if (!error) {
+      return { ok: true, schema: normalized, mode: 'supabase' };
+    }
+    return {
+      ok: true,
+      schema: normalized,
+      mode: 'local',
+      error: `Esquema guardado localmente (ejecute schema.sql en Supabase para sincronizar app_config: ${error.message})`,
+    };
+  }
+
+  return { ok: true, schema: normalized, mode: 'local' };
+}
+
+// ============================================================================
+// 3. COMPRESIÓN HTML5 CANVAS Y SUBIDA A SUPABASE STORAGE ('ticket-evidencias')
+// ============================================================================
+
+export async function compressImageWithCanvas(
+  file: File,
+  maxWidth = 1280,
+  quality = 0.75
+): Promise<{ blob: Blob; dataUrl: string; width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('No se pudo leer el archivo de imagen.'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Formato de imagen no válido.'));
+      img.onload = () => {
+        let targetWidth = img.width;
+        let targetHeight = img.height;
+
+        if (targetWidth > maxWidth) {
+          const ratio = maxWidth / targetWidth;
+          targetWidth = maxWidth;
+          targetHeight = Math.round(targetHeight * ratio);
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('No se pudo inicializar el compresor HTML5 Canvas.'));
+          return;
+        }
+
+        // Fondo blanco por si es un PNG con transparencia convertido a JPEG
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, targetWidth, targetHeight);
+        ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              reject(new Error('Error al comprimir imagen con Canvas.'));
+              return;
+            }
+            resolve({
+              blob,
+              dataUrl,
+              width: targetWidth,
+              height: targetHeight,
+            });
+          },
+          'image/jpeg',
+          quality
+        );
+      };
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+export async function uploadTicketEvidenceImage(file: File): Promise<{
+  url: string;
+  mode: 'supabase' | 'local';
+  sizeKB: number;
+}> {
+  const compressed = await compressImageWithCanvas(file, 1280, 0.75);
+  const sizeKB = Math.max(1, Math.round(compressed.blob.size / 1024));
+
+  if (supabase) {
+    try {
+      const safeName = file.name
+        .replace(/\.[^/.]+$/, '')
+        .replace(/[^a-zA-Z0-9_-]/g, '_')
+        .slice(0, 40);
+      const uniquePath = `evidencias/${Date.now()}_${Math.random()
+        .toString(36)
+        .slice(2, 7)}_${safeName}.jpg`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('ticket-evidencias')
+        .upload(uniquePath, compressed.blob, {
+          contentType: 'image/jpeg',
+          cacheControl: '3600',
+          upsert: false,
+        });
+
+      if (!uploadError) {
+        const { data: pubData } = supabase.storage
+          .from('ticket-evidencias')
+          .getPublicUrl(uniquePath);
+
+        if (pubData?.publicUrl) {
+          return { url: pubData.publicUrl, mode: 'supabase', sizeKB };
+        }
+      } else {
+        console.warn(
+          'Fallback a DataURL comprimido (bucket ticket-evidencias no disponible):',
+          uploadError.message
+        );
+      }
+    } catch (err) {
+      console.warn('Error subiendo a Supabase Storage:', err);
+    }
+  }
+
+  return {
+    url: compressed.dataUrl,
+    mode: 'local',
+    sizeKB,
+  };
+}
+
+// ============================================================================
+// 4. CRUD DE TICKETS (tickets_ti) Y SUSCRIPCIÓN REALTIME
+// ============================================================================
+
 export async function fetchTicketsTI(): Promise<{
   data: TicketTI[];
   mode: 'supabase' | 'local';
@@ -217,7 +600,15 @@ export async function fetchTicketsTI(): Promise<{
 export async function createTicketTI(
   input: NuevoTicketInput
 ): Promise<{ ticket: TicketTI; mode: 'supabase' | 'local' }> {
-  const payload = {
+  const tipoSolicitud = input.tipo_solicitud || 'Soporte Técnico / TI';
+  const imagenesUrls = Array.isArray(input.imagenes_urls) ? input.imagenes_urls : [];
+  const respuestasExtra =
+    input.respuestas_extra && typeof input.respuestas_extra === 'object'
+      ? input.respuestas_extra
+      : {};
+
+  const fullPayload = {
+    tipo_solicitud: tipoSolicitud,
     solicitante_nombre: input.solicitante_nombre.trim(),
     departamento_tienda: input.departamento_tienda.trim(),
     categoria: input.categoria,
@@ -228,25 +619,71 @@ export async function createTicketTI(
     estado: input.estado || 'Bandeja de Entrada',
     asignado_a: normalizeAsignadoA(input.asignado_a || DEFAULT_ASIGNADO),
     notas_tecnicas: input.notas_tecnicas ?? '',
+    imagenes_urls: imagenesUrls,
+    respuestas_extra: respuestasExtra,
   };
 
   if (supabase) {
     const { data, error } = await supabase
       .from('tickets_ti')
-      .insert([payload])
+      .insert([fullPayload])
       .select('*')
       .single();
 
     if (!error && data) {
       const created: TicketTI = {
         ...(data as TicketTI),
+        tipo_solicitud: data.tipo_solicitud || tipoSolicitud,
         asignado_a: normalizeAsignadoA(data.asignado_a),
         score_prioridad: data.score_prioridad ?? data.impacto * data.urgencia,
+        imagenes_urls: Array.isArray(data.imagenes_urls)
+          ? data.imagenes_urls
+          : imagenesUrls,
+        respuestas_extra:
+          data.respuestas_extra && typeof data.respuestas_extra === 'object'
+            ? data.respuestas_extra
+            : respuestasExtra,
       };
-      // Disparo Push instantáneo a Telegram Bot API
       void sendTelegramTicketNotification(created);
       return { ticket: created, mode: 'supabase' };
     }
+
+    // Fallback de compatibilidad si la tabla en Supabase aún no tiene las columnas nuevas
+    if (error) {
+      const legacyPayload = {
+        solicitante_nombre: fullPayload.solicitante_nombre,
+        departamento_tienda: fullPayload.departamento_tienda,
+        categoria: fullPayload.categoria,
+        titulo: fullPayload.titulo,
+        descripcion: fullPayload.descripcion,
+        impacto: fullPayload.impacto,
+        urgencia: fullPayload.urgencia,
+        estado: fullPayload.estado,
+        asignado_a: fullPayload.asignado_a,
+        notas_tecnicas: fullPayload.notas_tecnicas,
+      };
+
+      const retry = await supabase
+        .from('tickets_ti')
+        .insert([legacyPayload])
+        .select('*')
+        .single();
+
+      if (!retry.error && retry.data) {
+        const created: TicketTI = {
+          ...(retry.data as TicketTI),
+          tipo_solicitud: tipoSolicitud,
+          asignado_a: normalizeAsignadoA(retry.data.asignado_a),
+          score_prioridad:
+            retry.data.score_prioridad ?? retry.data.impacto * retry.data.urgencia,
+          imagenes_urls: imagenesUrls,
+          respuestas_extra: respuestasExtra,
+        };
+        void sendTelegramTicketNotification(created);
+        return { ticket: created, mode: 'supabase' };
+      }
+    }
+
     console.warn('Fallo inserción en Supabase, guardando en almacenamiento local:', error?.message);
   }
 
@@ -262,24 +699,26 @@ export async function createTicketTI(
     codigo_ticket: maxCodigo + 1,
     created_at: nowIso,
     updated_at: nowIso,
-    solicitante_nombre: payload.solicitante_nombre,
-    departamento_tienda: payload.departamento_tienda,
-    categoria: payload.categoria,
-    titulo: payload.titulo,
-    descripcion: payload.descripcion,
-    impacto: payload.impacto,
-    urgencia: payload.urgencia,
-    score_prioridad: payload.impacto * payload.urgencia,
-    estado: payload.estado,
-    asignado_a: payload.asignado_a,
-    notas_tecnicas: payload.notas_tecnicas,
-    fecha_resolucion: payload.estado === 'Resuelto' ? nowIso : null,
+    tipo_solicitud: tipoSolicitud,
+    solicitante_nombre: fullPayload.solicitante_nombre,
+    departamento_tienda: fullPayload.departamento_tienda,
+    categoria: fullPayload.categoria,
+    titulo: fullPayload.titulo,
+    descripcion: fullPayload.descripcion,
+    impacto: fullPayload.impacto,
+    urgencia: fullPayload.urgencia,
+    score_prioridad: fullPayload.impacto * fullPayload.urgencia,
+    estado: fullPayload.estado,
+    asignado_a: fullPayload.asignado_a,
+    notas_tecnicas: fullPayload.notas_tecnicas,
+    fecha_resolucion: fullPayload.estado === 'Resuelto' ? nowIso : null,
+    imagenes_urls: imagenesUrls,
+    respuestas_extra: respuestasExtra,
   };
 
   const updated = [newTicket, ...current];
   saveLocalTickets(updated, newTicket);
 
-  // Disparo Push instantáneo a Telegram Bot API
   void sendTelegramTicketNotification(newTicket);
 
   return { ticket: newTicket, mode: 'local' };
@@ -370,7 +809,8 @@ export async function updateTicketTI(
 
 export function subscribeToTicketsTI(
   onUpdate: () => void,
-  onNewTicket?: (ticket: TicketTI) => void
+  onNewTicket?: (ticket: TicketTI) => void,
+  onConfigUpdate?: () => void
 ): () => void {
   const cleanups: Array<() => void> = [];
 
@@ -392,6 +832,13 @@ export function subscribeToTicketsTI(
           onUpdate();
         }
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'app_config' },
+        () => {
+          if (onConfigUpdate) onConfigUpdate();
+        }
+      )
       .subscribe();
 
     cleanups.push(() => {
@@ -409,6 +856,13 @@ export function subscribeToTicketsTI(
       ) {
         onNewTicket(event.data.payload as TicketTI);
       }
+      if (
+        (event.data?.type === 'PIN_UPDATED' ||
+          event.data?.type === 'FORM_SCHEMA_UPDATED') &&
+        onConfigUpdate
+      ) {
+        onConfigUpdate();
+      }
       onUpdate();
     };
     bc.addEventListener('message', handler);
@@ -421,6 +875,12 @@ export function subscribeToTicketsTI(
   const storageHandler = (e: StorageEvent) => {
     if (e.key === LOCAL_STORAGE_KEY) {
       onUpdate();
+    }
+    if (
+      (e.key === LOCAL_PIN_STORAGE_KEY || e.key === LOCAL_FORM_SCHEMA_KEY) &&
+      onConfigUpdate
+    ) {
+      onConfigUpdate();
     }
   };
   window.addEventListener('storage', storageHandler);

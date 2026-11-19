@@ -1,4 +1,4 @@
-import React, { useId, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import {
   Send,
   Building2,
@@ -14,27 +14,33 @@ import {
   MapPin,
   CheckCircle2,
   Search,
+  Camera,
+  ImagePlus,
+  Trash2,
+  Wrench,
+  BookOpen,
 } from 'lucide-react';
 import {
-  CATALOGO_DEPARTAMENTOS,
-  CATALOGO_SEDES_DETALLE,
-  CATEGORIAS_TICKET,
-  CategoriaTicket,
   composeUbicacion,
   DEFAULT_ASIGNADO,
   formatCodigoTicket,
+  FormSchemaConfig,
   getPrioridadMeta,
+  getSedeMeta,
   IMPACTO_LABELS,
   NivelImpacto,
   NivelUrgencia,
   NuevoTicketInput,
   parseUbicacion,
   TicketTI,
+  TipoSolicitud,
   URGENCIA_LABELS,
 } from '../types/tickets';
+import { uploadTicketEvidenceImage } from '../lib/supabase';
 
 interface PortalSolicitudViewProps {
   onCreateTicket: (input: NuevoTicketInput) => Promise<TicketTI>;
+  formSchema: FormSchemaConfig;
 }
 
 const GRUPOS_SEDES = [
@@ -44,8 +50,16 @@ const GRUPOS_SEDES = [
   'Tiendas Chönkies',
 ] as const;
 
+interface UploadedImageItem {
+  id: string;
+  url: string;
+  name: string;
+  sizeKB: number;
+}
+
 export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
   onCreateTicket,
+  formSchema,
 }) => {
   const formTitleId = useId();
   const nombreId = useId();
@@ -55,25 +69,58 @@ export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
   const categoriaId = useId();
   const tituloId = useId();
   const descId = useId();
+  const fileGalleryRef = useRef<HTMLInputElement>(null);
+  const fileCameraRef = useRef<HTMLInputElement>(null);
 
+  const [tipoSolicitud, setTipoSolicitud] = useState<TipoSolicitud>(
+    'Soporte Técnico / TI'
+  );
   const [solicitanteNombre, setSolicitanteNombre] = useState('');
-  const [departamento, setDepartamento] = useState<string>('ADMINISTRACIÓN');
+  const [departamento, setDepartamento] = useState<string>(
+    formSchema.departamentos[0] || 'ADMINISTRACIÓN'
+  );
   const [sedeComercial, setSedeComercial] = useState<string>(
-    'N/A (Oficina / No aplica)'
+    formSchema.sedes[0] || 'N/A (Oficina / No aplica)'
   );
   const [busquedaSede, setBusquedaSede] = useState('');
-  const [categoria, setCategoria] = useState<CategoriaTicket>(
-    'Odoo ERP / TPV Tiendas'
+
+  const activeCategoryList =
+    tipoSolicitud === 'Consultas sobre Odoo'
+      ? formSchema.modulos_odoo
+      : formSchema.categorias_ti;
+
+  const [categoria, setCategoria] = useState<string>(
+    activeCategoryList[0] || 'Odoo ERP / TPV Tiendas'
   );
   const [titulo, setTitulo] = useState('');
   const [descripcion, setDescripcion] = useState('');
   const [impacto, setImpacto] = useState<NivelImpacto>(1);
   const [urgencia, setUrgencia] = useState<NivelUrgencia>(2);
 
+  // Preguntas personalizadas dinámicas
+  const [respuestasExtra, setRespuestasExtra] = useState<
+    Record<string, string | boolean>
+  >({});
+
+  // Evidencias fotográficas comprimidas (máx. 3)
+  const [imagenes, setImagenes] = useState<UploadedImageItem[]>([]);
+  const [isCompressingImg, setIsCompressingImg] = useState(false);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [ticketCreado, setTicketCreado] = useState<TicketTI | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // Al cambiar entre "Soporte Técnico / TI" y "Consultas sobre Odoo", actualizar la primera categoría correspondiente
+  useEffect(() => {
+    const list =
+      tipoSolicitud === 'Consultas sobre Odoo'
+        ? formSchema.modulos_odoo
+        : formSchema.categorias_ti;
+    if (list.length > 0 && !list.includes(categoria)) {
+      setCategoria(list[0]);
+    }
+  }, [tipoSolicitud, formSchema.modulos_odoo, formSchema.categorias_ti, categoria]);
 
   const scoreCalculado = impacto * urgencia;
   const metaPrioridad = getPrioridadMeta(scoreCalculado);
@@ -82,25 +129,28 @@ export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
   const handleDepartamentoChange = (nuevoDepto: string) => {
     setDepartamento(nuevoDepto);
     if (nuevoDepto === 'CDP' || nuevoDepto === 'RECEPCIÓN CDP1') {
-      setSedeComercial('CDP1');
+      if (formSchema.sedes.includes('CDP1')) setSedeComercial('CDP1');
     } else if (nuevoDepto === 'CDP2') {
-      setSedeComercial('CDP2');
+      if (formSchema.sedes.includes('CDP2')) setSedeComercial('CDP2');
     } else if (nuevoDepto === 'CDA-CCS') {
-      setSedeComercial('CDA-CCS');
+      if (formSchema.sedes.includes('CDA-CCS')) setSedeComercial('CDA-CCS');
     } else if (nuevoDepto === 'CDA-BQTO') {
-      setSedeComercial('CDA-BQTO');
+      if (formSchema.sedes.includes('CDA-BQTO')) setSedeComercial('CDA-BQTO');
     } else if (
       nuevoDepto === 'TIENDA' &&
       sedeComercial === 'N/A (Oficina / No aplica)'
     ) {
-      setSedeComercial(
-        'SNÖ Delicias (Grupo Ferco Maracaibo C.A. - Maracaibo)'
+      const firstStore = formSchema.sedes.find(
+        (s) => s.startsWith('SNÖ') || s.startsWith('Chönkies')
       );
+      if (firstStore) setSedeComercial(firstStore);
     }
   };
 
-  // Filtrado rápido del catálogo de sedes
-  const sedesFiltradas = CATALOGO_SEDES_DETALLE.filter((item) => {
+  // Construir lista de sedes con sus metadatos a partir de formSchema.sedes
+  const sedesConDetalle = formSchema.sedes.map((valor) => getSedeMeta(valor));
+
+  const sedesFiltradas = sedesConDetalle.filter((item) => {
     if (!busquedaSede.trim()) return true;
     const q = busquedaSede.toLowerCase();
     return (
@@ -110,9 +160,58 @@ export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
     );
   });
 
-  const sedeSeleccionadaInfo = CATALOGO_SEDES_DETALLE.find(
+  const sedeSeleccionadaInfo = sedesConDetalle.find(
     (s) => s.valor === sedeComercial
   );
+
+  // Preguntas dinámicas activas aplicables al tipo de solicitud actual
+  const preguntasActivas = formSchema.preguntas_personalizadas.filter(
+    (q) => q.activa && (q.aplica_a === 'Todos' || q.aplica_a === tipoSolicitud)
+  );
+
+  const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+
+    const remainingSlots = 3 - imagenes.length;
+    if (remainingSlots <= 0) {
+      setErrorMsg('Solo se permiten máximo 3 imágenes por requerimiento.');
+      e.target.value = '';
+      return;
+    }
+
+    const selectedFiles = Array.from(fileList).slice(0, remainingSlots);
+    setIsCompressingImg(true);
+    setErrorMsg('');
+
+    try {
+      const uploadedItems: UploadedImageItem[] = [];
+      for (const file of selectedFiles) {
+        if (!file.type.startsWith('image/')) continue;
+        const res = await uploadTicketEvidenceImage(file);
+        uploadedItems.push({
+          id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          url: res.url,
+          name: file.name,
+          sizeKB: res.sizeKB,
+        });
+      }
+      setImagenes((prev) => [...prev, ...uploadedItems].slice(0, 3));
+    } catch (err) {
+      setErrorMsg(
+        err instanceof Error
+          ? err.message
+          : 'Error al comprimir o subir la imagen.'
+      );
+    } finally {
+      setIsCompressingImg(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleRemoveImage = (id: string) => {
+    setImagenes((prev) => prev.filter((img) => img.id !== id));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -123,15 +222,42 @@ export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
       return;
     }
     if (!titulo.trim()) {
-      setErrorMsg('Ingrese un asunto o resumen técnico del requerimiento.');
+      setErrorMsg('Ingrese un asunto o resumen del requerimiento.');
       return;
+    }
+
+    // Validar preguntas personalizadas obligatorias
+    for (const q of preguntasActivas) {
+      if (q.obligatoria) {
+        const val = respuestasExtra[q.titulo];
+        if (
+          val === undefined ||
+          val === '' ||
+          (q.tipo === 'casilla_verificacion' && val !== true)
+        ) {
+          setErrorMsg(`El campo "${q.titulo}" es obligatorio.`);
+          return;
+        }
+      }
     }
 
     const ubicacionCombinada = composeUbicacion(departamento, sedeComercial);
 
+    // Filtrar respuestasExtra solo de preguntas activas
+    const respuestasLimpias: Record<string, string | boolean> = {};
+    for (const q of preguntasActivas) {
+      const val = respuestasExtra[q.titulo];
+      if (val !== undefined && val !== '') {
+        respuestasLimpias[q.titulo] = val;
+      } else if (q.tipo === 'casilla_verificacion') {
+        respuestasLimpias[q.titulo] = Boolean(val);
+      }
+    }
+
     setIsSubmitting(true);
     try {
       const created = await onCreateTicket({
+        tipo_solicitud: tipoSolicitud,
         solicitante_nombre: solicitanteNombre,
         departamento_tienda: ubicacionCombinada,
         categoria,
@@ -141,6 +267,8 @@ export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
         urgencia,
         estado: 'Bandeja de Entrada',
         asignado_a: DEFAULT_ASIGNADO,
+        imagenes_urls: imagenes.map((img) => img.url),
+        respuestas_extra: respuestasLimpias,
       });
       setTicketCreado(created);
     } catch (err) {
@@ -160,6 +288,8 @@ export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
     setDescripcion('');
     setImpacto(1);
     setUrgencia(2);
+    setImagenes([]);
+    setRespuestasExtra({});
     setErrorMsg('');
     setCopied(false);
   };
@@ -178,11 +308,11 @@ export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
     const ubicacionCreada = parseUbicacion(ticketCreado.departamento_tienda);
 
     return (
-      <section className="mx-auto max-w-2xl py-6">
+      <section className="mx-auto max-w-2xl py-4 pb-20 lg:pb-8">
         <div
           role="status"
           aria-live="polite"
-          className="rounded-md border border-slate-300 bg-white p-6 shadow-xs sm:p-8"
+          className="rounded-md border border-slate-300 bg-white p-5 shadow-xs sm:p-8"
         >
           <div className="border-b border-slate-200 pb-4">
             <div className="flex items-center gap-2 text-emerald-700">
@@ -191,7 +321,7 @@ export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
                 Comprobante de Registro ITSM
               </span>
             </div>
-            <h2 className="mt-1 text-xl font-bold text-slate-900">
+            <h2 className="mt-1 text-lg font-bold text-slate-900 sm:text-xl">
               Requerimiento Encolado Exitosamente
             </h2>
             <p className="mt-1 text-xs text-slate-600">
@@ -201,7 +331,7 @@ export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
             </p>
           </div>
 
-          <div className="my-5 flex flex-col justify-between gap-4 rounded-sm border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center">
+          <div className="my-5 flex flex-col justify-between gap-3 rounded-sm border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center">
             <div>
               <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-500">
                 Código Oficial de Ticket
@@ -214,16 +344,16 @@ export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
             <button
               type="button"
               onClick={handleCopyCode}
-              className="inline-flex items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+              className="inline-flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-sm border border-slate-300 bg-white px-4 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 sm:h-9 sm:min-h-0 sm:w-auto"
             >
               {copied ? (
                 <>
-                  <Check className="h-3.5 w-3.5 text-emerald-700" aria-hidden="true" />
+                  <Check className="h-4 w-4 text-emerald-700" aria-hidden="true" />
                   <span>Código Copiado</span>
                 </>
               ) : (
                 <>
-                  <Copy className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
+                  <Copy className="h-4 w-4 text-slate-500" aria-hidden="true" />
                   <span>Copiar Código</span>
                 </>
               )}
@@ -231,6 +361,12 @@ export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
           </div>
 
           <dl className="grid grid-cols-1 gap-3 border-t border-slate-200 pt-4 text-xs sm:grid-cols-2">
+            <div>
+              <dt className="font-medium text-slate-500">Tipo de Solicitud</dt>
+              <dd className="mt-0.5 font-semibold text-blue-700">
+                {ticketCreado.tipo_solicitud || 'Soporte Técnico / TI'}
+              </dd>
+            </div>
             <div>
               <dt className="font-medium text-slate-500">Solicitante</dt>
               <dd className="mt-0.5 font-semibold text-slate-900">
@@ -250,7 +386,11 @@ export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
               </dd>
             </div>
             <div>
-              <dt className="font-medium text-slate-500">Categoría de Servicio</dt>
+              <dt className="font-medium text-slate-500">
+                {ticketCreado.tipo_solicitud === 'Consultas sobre Odoo'
+                  ? 'Módulo de Odoo'
+                  : 'Categoría de Servicio'}
+              </dt>
               <dd className="mt-0.5 font-semibold text-slate-900">
                 {ticketCreado.categoria}
               </dd>
@@ -265,21 +405,15 @@ export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
                 </span>
               </dd>
             </div>
-            <div>
-              <dt className="font-medium text-slate-500">Asignación Inicial</dt>
-              <dd className="mt-0.5 font-semibold text-slate-900">
-                {ticketCreado.asignado_a}
-              </dd>
-            </div>
           </dl>
 
           <div className="mt-6 flex justify-end border-t border-slate-200 pt-4">
             <button
               type="button"
               onClick={handleReset}
-              className="inline-flex items-center gap-1.5 rounded-sm bg-blue-700 px-4 py-2 text-xs font-semibold text-white transition hover:bg-blue-800"
+              className="inline-flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-sm bg-blue-700 px-5 text-xs font-bold text-white transition hover:bg-blue-800 sm:h-10 sm:min-h-0 sm:w-auto"
             >
-              <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+              <RotateCcw className="h-4 w-4" aria-hidden="true" />
               <span>Registrar Nuevo Requerimiento</span>
             </button>
           </div>
@@ -289,34 +423,65 @@ export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
   }
 
   return (
-    <section className="mx-auto max-w-4xl py-2">
-      {/* Encabezado Técnico Sobrio */}
-      <div className="mb-4 rounded-md border border-slate-200 bg-white px-5 py-4 shadow-xs">
-        <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+    <section className="mx-auto max-w-4xl py-1 pb-20 lg:pb-6">
+      {/* SELECTOR SUPERIOR DE TIPO DE SOLICITUD (2 PESTAÑAS RECTANGULARES SOBRIAS) */}
+      <div className="mb-3 rounded-md border border-slate-200 bg-white p-3 shadow-xs sm:p-4">
+        <div className="mb-2.5 flex flex-col justify-between gap-1 sm:flex-row sm:items-center">
           <div>
             <span className="text-[11px] font-bold uppercase tracking-wider text-blue-700">
-              Módulo de Captura ITSM • Control de Requerimientos BI/TI
+              Portal de Atención BI/TI • Grupo Comercializadora Ferco
             </span>
-            <h2 id={formTitleId} className="text-base font-bold text-slate-900 sm:text-lg">
-              Formulario de Solicitud de Soporte y Requerimientos Técnicos
+            <h2 id={formTitleId} className="text-sm font-bold text-slate-900 sm:text-base">
+              Seleccione el Tipo de Requerimiento
             </h2>
           </div>
-          <span className="rounded-sm border border-slate-200 bg-slate-50 px-2.5 py-1 font-mono text-xs font-semibold text-slate-700">
-            Matriz Impacto × Urgencia
+          <span className="self-start rounded-sm border border-slate-200 bg-slate-50 px-2 py-0.5 font-mono text-[11px] font-semibold text-slate-700 sm:self-auto">
+            Código Automático FER-TI-00X
           </span>
         </div>
-        <p className="mt-1 text-xs text-slate-600">
-          Complete los datos de su área o tienda comercial. El sistema asignará un código
-          secuencial <code className="font-mono font-semibold text-slate-800">FER-TI-00X</code>{' '}
-          para seguimiento formal.
-        </p>
+
+        <div
+          role="tablist"
+          aria-label="Tipo de requerimiento"
+          className="grid grid-cols-1 gap-2 sm:grid-cols-2"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tipoSolicitud === 'Soporte Técnico / TI'}
+            onClick={() => setTipoSolicitud('Soporte Técnico / TI')}
+            className={`flex min-h-[46px] items-center justify-center gap-2 rounded-sm border px-4 py-2.5 text-xs font-bold uppercase tracking-wider transition ${
+              tipoSolicitud === 'Soporte Técnico / TI'
+                ? 'border-blue-700 bg-blue-700 text-white shadow-xs'
+                : 'border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100'
+            }`}
+          >
+            <Wrench className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span>Soporte Técnico / TI</span>
+          </button>
+
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tipoSolicitud === 'Consultas sobre Odoo'}
+            onClick={() => setTipoSolicitud('Consultas sobre Odoo')}
+            className={`flex min-h-[46px] items-center justify-center gap-2 rounded-sm border px-4 py-2.5 text-xs font-bold uppercase tracking-wider transition ${
+              tipoSolicitud === 'Consultas sobre Odoo'
+                ? 'border-blue-700 bg-blue-700 text-white shadow-xs'
+                : 'border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100'
+            }`}
+          >
+            <BookOpen className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span>Consultas sobre Odoo</span>
+          </button>
+        </div>
       </div>
 
       <form
         aria-labelledby={formTitleId}
         onSubmit={handleSubmit}
         method="post"
-        className="space-y-5 rounded-md border border-slate-200 bg-white p-5 shadow-xs sm:p-6"
+        className="space-y-5 rounded-md border border-slate-200 bg-white p-4 shadow-xs sm:p-6"
       >
         {/* SECCIÓN 1: IDENTIFICACIÓN Y UBICACIÓN ORGANIZACIONAL */}
         <div>
@@ -344,7 +509,7 @@ export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
                 value={solicitanteNombre}
                 onChange={(e) => setSolicitanteNombre(e.target.value)}
                 placeholder="Ej: María Fernanda Gómez"
-                className="h-9 w-full rounded-sm border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
+                className="min-h-[44px] w-full rounded-sm border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700 sm:h-10 sm:min-h-0 sm:text-sm"
               />
             </div>
 
@@ -363,9 +528,9 @@ export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
                 name="departamento"
                 value={departamento}
                 onChange={(e) => handleDepartamentoChange(e.target.value)}
-                className="h-9 w-full rounded-sm border border-slate-300 bg-white px-2.5 text-sm text-slate-900 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
+                className="min-h-[44px] w-full rounded-sm border border-slate-300 bg-white px-2.5 text-base text-slate-900 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700 sm:h-10 sm:min-h-0 sm:text-sm"
               >
-                {CATALOGO_DEPARTAMENTOS.map((dep) => (
+                {formSchema.departamentos.map((dep) => (
                   <option key={dep} value={dep}>
                     {dep}
                   </option>
@@ -375,18 +540,18 @@ export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
 
             {/* Selector B: Sede Comercial / Tienda / Centro Operativo */}
             <div className="sm:col-span-5">
-              <div className="mb-1 flex items-center justify-between gap-2">
+              <div className="mb-1 flex flex-wrap items-center justify-between gap-1.5">
                 <label
                   htmlFor={sedeId}
                   className="flex items-center gap-1 text-xs font-semibold text-slate-700"
                 >
                   <MapPin className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
-                  <span>Sede Comercial / Centro Operativo</span>
+                  <span>Sede Comercial / Centro</span>
                   <span aria-hidden="true" className="text-red-600">*</span>
                 </label>
 
                 {/* Buscador rápido integrado para filtrar Sedes o Razón Social */}
-                <div className="relative w-40">
+                <div className="relative w-36 sm:w-40">
                   <Search
                     className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-slate-400"
                     aria-hidden="true"
@@ -401,7 +566,7 @@ export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
                     onChange={(e) => {
                       const val = e.target.value;
                       setBusquedaSede(val);
-                      const firstMatch = CATALOGO_SEDES_DETALLE.find(
+                      const firstMatch = sedesConDetalle.find(
                         (s) =>
                           s.valor.toLowerCase().includes(val.toLowerCase()) ||
                           (s.razonSocial &&
@@ -411,8 +576,8 @@ export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
                         setSedeComercial(firstMatch.valor);
                       }
                     }}
-                    placeholder="Filtrar tienda/razón..."
-                    className="h-6 w-full rounded-sm border border-slate-200 bg-slate-50 pl-6 pr-1.5 text-[11px] text-slate-800 placeholder:text-slate-400 focus:border-blue-700 focus:bg-white focus:outline-none"
+                    placeholder="Filtrar tienda..."
+                    className="h-6 w-full rounded-sm border border-slate-200 bg-slate-50 pl-6 pr-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:border-blue-700 focus:bg-white focus:outline-none"
                   />
                 </div>
               </div>
@@ -422,7 +587,7 @@ export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
                 name="sede_comercial"
                 value={sedeComercial}
                 onChange={(e) => setSedeComercial(e.target.value)}
-                className="h-9 w-full rounded-sm border border-slate-300 bg-white px-2.5 text-sm text-slate-900 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
+                className="min-h-[44px] w-full rounded-sm border border-slate-300 bg-white px-2.5 text-base text-slate-900 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700 sm:h-10 sm:min-h-0 sm:text-sm"
               >
                 {GRUPOS_SEDES.map((grupo) => {
                   const itemsGrupo = sedesFiltradas.filter((s) => s.grupo === grupo);
@@ -454,10 +619,13 @@ export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
           </div>
         </div>
 
-        {/* SECCIÓN 2: CLASIFICACIÓN TÉCNICA Y DETALLE */}
+        {/* SECCIÓN 2: CLASIFICACIÓN TÉCNICA / MÓDULO ODOO Y DETALLE */}
         <div>
           <h3 className="mb-3 border-b border-slate-200 pb-1.5 text-xs font-bold uppercase tracking-wider text-slate-700">
-            2. Clasificación y Detalle del Requerimiento
+            2.{' '}
+            {tipoSolicitud === 'Consultas sobre Odoo'
+              ? 'Módulo de Odoo y Detalle de la Consulta'
+              : 'Clasificación Técnica y Detalle del Requerimiento'}
           </h3>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-12">
@@ -467,17 +635,21 @@ export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
                 className="mb-1 flex items-center gap-1 text-xs font-semibold text-slate-700"
               >
                 <Layers className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
-                <span>Categoría de Servicio</span>
+                <span>
+                  {tipoSolicitud === 'Consultas sobre Odoo'
+                    ? 'Módulo de Odoo'
+                    : 'Categoría de Servicio'}
+                </span>
                 <span aria-hidden="true" className="text-red-600">*</span>
               </label>
               <select
                 id={categoriaId}
                 name="categoria"
                 value={categoria}
-                onChange={(e) => setCategoria(e.target.value as CategoriaTicket)}
-                className="h-9 w-full rounded-sm border border-slate-300 bg-white px-2.5 text-sm text-slate-900 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
+                onChange={(e) => setCategoria(e.target.value)}
+                className="min-h-[44px] w-full rounded-sm border border-slate-300 bg-white px-2.5 text-base text-slate-900 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700 sm:h-10 sm:min-h-0 sm:text-sm"
               >
-                {CATEGORIAS_TICKET.map((cat) => (
+                {activeCategoryList.map((cat) => (
                   <option key={cat} value={cat}>
                     {cat}
                   </option>
@@ -491,7 +663,7 @@ export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
                 className="mb-1 flex items-center gap-1 text-xs font-semibold text-slate-700"
               >
                 <FileText className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
-                <span>Asunto / Resumen del Problema o Solicitud</span>
+                <span>Asunto / Resumen del Problema o Consulta</span>
                 <span aria-hidden="true" className="text-red-600">*</span>
               </label>
               <input
@@ -502,8 +674,12 @@ export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
                 maxLength={140}
                 value={titulo}
                 onChange={(e) => setTitulo(e.target.value)}
-                placeholder="Ej: Diferencia al cerrar sesión de TPV Caja 02 en Odoo / Solicitud de reporte de inventario"
-                className="h-9 w-full rounded-sm border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
+                placeholder={
+                  tipoSolicitud === 'Consultas sobre Odoo'
+                    ? 'Ej: Consulta sobre cuadre de cierre en Punto de Venta Caja 02'
+                    : 'Ej: Falla de impresión de etiquetas / Solicitud de acceso'
+                }
+                className="min-h-[44px] w-full rounded-sm border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700 sm:h-10 sm:min-h-0 sm:text-sm"
               />
             </div>
 
@@ -512,7 +688,7 @@ export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
                 htmlFor={descId}
                 className="mb-1 block text-xs font-semibold text-slate-700"
               >
-                Descripción Técnica / Contexto Operativo (Pasos, mensajes de error, códigos SKU o detalle de BI)
+                Descripción Detallada (Pasos, mensajes en pantalla, códigos SKU o documento)
               </label>
               <textarea
                 id={descId}
@@ -520,10 +696,215 @@ export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
                 rows={3}
                 value={descripcion}
                 onChange={(e) => setDescripcion(e.target.value)}
-                placeholder="Indique los detalles específicos para agilizar el diagnóstico sin requerir consultas adicionales..."
-                className="w-full rounded-sm border border-slate-300 bg-white p-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
+                placeholder="Indique los detalles específicos para agilizar la atención..."
+                className="w-full rounded-sm border border-slate-300 bg-white p-3 text-base text-slate-900 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700 sm:text-sm"
               />
             </div>
+          </div>
+        </div>
+
+        {/* PREGUNTAS DINÁMICAS PERSONALIZADAS (CONFIGURADAS EN APP_CONFIG) */}
+        {preguntasActivas.length > 0 && (
+          <div>
+            <h3 className="mb-3 border-b border-slate-200 pb-1.5 text-xs font-bold uppercase tracking-wider text-slate-700">
+              Información Adicional Requerida
+            </h3>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {preguntasActivas.map((q) => {
+                const fieldId = `custom-field-${q.id}`;
+                const val = respuestasExtra[q.titulo];
+
+                return (
+                  <div
+                    key={q.id}
+                    className={q.tipo === 'parrafo' ? 'sm:col-span-2' : ''}
+                  >
+                    {q.tipo === 'casilla_verificacion' ? (
+                      <div className="flex min-h-[44px] items-center gap-2.5 rounded-sm border border-slate-200 bg-slate-50 px-3 py-2">
+                        <input
+                          id={fieldId}
+                          type="checkbox"
+                          checked={Boolean(val)}
+                          onChange={(e) =>
+                            setRespuestasExtra((prev) => ({
+                              ...prev,
+                              [q.titulo]: e.target.checked,
+                            }))
+                          }
+                          className="h-4 w-4 accent-blue-700"
+                        />
+                        <label
+                          htmlFor={fieldId}
+                          className="cursor-pointer select-none text-xs font-semibold text-slate-800"
+                        >
+                          {q.titulo}{' '}
+                          {q.obligatoria && (
+                            <span className="text-red-600">*</span>
+                          )}
+                        </label>
+                      </div>
+                    ) : (
+                      <>
+                        <label
+                          htmlFor={fieldId}
+                          className="mb-1 block text-xs font-semibold text-slate-700"
+                        >
+                          {q.titulo}{' '}
+                          {q.obligatoria && (
+                            <span aria-hidden="true" className="text-red-600">
+                              *
+                            </span>
+                          )}
+                        </label>
+
+                        {q.tipo === 'texto_corto' && (
+                          <input
+                            id={fieldId}
+                            type="text"
+                            required={q.obligatoria}
+                            value={typeof val === 'string' ? val : ''}
+                            onChange={(e) =>
+                              setRespuestasExtra((prev) => ({
+                                ...prev,
+                                [q.titulo]: e.target.value,
+                              }))
+                            }
+                            className="min-h-[44px] w-full rounded-sm border border-slate-300 bg-white px-3 text-base text-slate-900 focus:border-blue-700 focus:outline-none sm:h-10 sm:min-h-0 sm:text-sm"
+                          />
+                        )}
+
+                        {q.tipo === 'parrafo' && (
+                          <textarea
+                            id={fieldId}
+                            rows={2}
+                            required={q.obligatoria}
+                            value={typeof val === 'string' ? val : ''}
+                            onChange={(e) =>
+                              setRespuestasExtra((prev) => ({
+                                ...prev,
+                                [q.titulo]: e.target.value,
+                              }))
+                            }
+                            className="w-full rounded-sm border border-slate-300 bg-white p-2.5 text-base text-slate-900 focus:border-blue-700 focus:outline-none sm:text-sm"
+                          />
+                        )}
+
+                        {q.tipo === 'lista_desplegable' && (
+                          <select
+                            id={fieldId}
+                            required={q.obligatoria}
+                            value={typeof val === 'string' ? val : ''}
+                            onChange={(e) =>
+                              setRespuestasExtra((prev) => ({
+                                ...prev,
+                                [q.titulo]: e.target.value,
+                              }))
+                            }
+                            className="min-h-[44px] w-full rounded-sm border border-slate-300 bg-white px-2.5 text-base text-slate-900 focus:border-blue-700 focus:outline-none sm:h-10 sm:min-h-0 sm:text-sm"
+                          >
+                            <option value="">Seleccione una opción...</option>
+                            {q.opciones.map((opt) => (
+                              <option key={opt} value={opt}>
+                                {opt}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* SECCIÓN DE EVIDENCIAS FOTOGRÁFICAS (MÁX. 3 IMÁGENES COMPRIMIDAS CON CANVAS) */}
+        <div>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-1.5">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+              Evidencias Fotográficas / Capturas de Pantalla (Opcional • Máx. 3)
+            </h3>
+            <span className="font-mono text-[11px] font-semibold text-slate-500">
+              {imagenes.length}/3 adjuntas (Compresión automática Canvas)
+            </span>
+          </div>
+
+          {/* Inputs ocultos para Galería y Cámara Móvil */}
+          <input
+            ref={fileGalleryRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            multiple
+            onChange={handleFilesSelected}
+            className="hidden"
+          />
+          <input
+            ref={fileCameraRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            capture="environment"
+            onChange={handleFilesSelected}
+            className="hidden"
+          />
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            {imagenes.length < 3 && (
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+                <button
+                  type="button"
+                  disabled={isCompressingImg}
+                  onClick={() => fileGalleryRef.current?.click()}
+                  className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-sm border border-slate-300 bg-slate-50 px-3.5 text-xs font-bold text-slate-800 transition hover:bg-slate-100 disabled:opacity-50"
+                >
+                  <ImagePlus className="h-4 w-4 text-blue-700" aria-hidden="true" />
+                  <span>{isCompressingImg ? 'Comprimiendo...' : 'Subir de Galería'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isCompressingImg}
+                  onClick={() => fileCameraRef.current?.click()}
+                  className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-sm border border-slate-300 bg-slate-50 px-3.5 text-xs font-bold text-slate-800 transition hover:bg-slate-100 disabled:opacity-50"
+                >
+                  <Camera className="h-4 w-4 text-blue-700" aria-hidden="true" />
+                  <span>Tomar Foto</span>
+                </button>
+              </div>
+            )}
+
+            {/* Miniaturas de imágenes cargadas */}
+            {imagenes.length > 0 && (
+              <div className="grid grid-cols-3 gap-2.5 sm:flex sm:flex-wrap">
+                {imagenes.map((img, idx) => (
+                  <div
+                    key={img.id}
+                    className="relative flex flex-col overflow-hidden rounded-sm border border-slate-300 bg-slate-50 p-1"
+                  >
+                    <img
+                      src={img.url}
+                      alt={`Evidencia ${idx + 1}`}
+                      width={96}
+                      height={72}
+                      className="h-16 w-full object-cover sm:h-16 sm:w-24"
+                    />
+                    <div className="mt-1 flex items-center justify-between gap-1 px-0.5">
+                      <span className="font-mono text-[10px] font-semibold text-slate-600">
+                        {img.sizeKB} KB
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveImage(img.id)}
+                        aria-label={`Eliminar imagen ${idx + 1}`}
+                        className="rounded-sm p-1 text-red-600 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -549,7 +930,7 @@ export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
                     <div
                       key={nivel}
                       onClick={() => setImpacto(nivel)}
-                      className={`flex cursor-pointer items-start gap-2.5 rounded-sm border p-2.5 transition ${
+                      className={`flex min-h-[48px] cursor-pointer items-start gap-2.5 rounded-sm border p-3 transition ${
                         isSelected
                           ? 'border-blue-700 bg-blue-50/50'
                           : 'border-slate-200 bg-white hover:border-slate-300'
@@ -593,7 +974,7 @@ export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
                     <div
                       key={nivel}
                       onClick={() => setUrgencia(nivel)}
-                      className={`flex cursor-pointer items-start gap-2.5 rounded-sm border p-2.5 transition ${
+                      className={`flex min-h-[48px] cursor-pointer items-start gap-2.5 rounded-sm border p-3 transition ${
                         isSelected
                           ? 'border-blue-700 bg-blue-50/50'
                           : 'border-slate-200 bg-white hover:border-slate-300'
@@ -624,19 +1005,19 @@ export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
           </div>
         </div>
 
-        {/* BARRA INFERIOR DE RESUMEN DE PRIORIDAD Y BOTÓN DE ENVÍO */}
-        <div className="flex flex-col justify-between gap-4 rounded-sm border border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center">
+        {/* BARRA INFERIOR DE RESUMEN DE PRIORIDAD Y BOTÓN DE ENVÍO (W-FULL EN MÓVIL) */}
+        <div className="flex flex-col justify-between gap-4 rounded-sm border border-slate-200 bg-slate-50 px-4 py-3.5 sm:flex-row sm:items-center">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 flex-col items-center justify-center rounded-sm border border-slate-300 bg-white font-mono">
+            <div className="flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-sm border border-slate-300 bg-white font-mono">
               <span className="text-[9px] font-semibold uppercase text-slate-500">
                 Score
               </span>
               <span className="text-sm font-bold text-slate-900">{scoreCalculado}</span>
             </div>
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <span className="text-xs font-semibold text-slate-700">
-                  Cálculo Matriz (Impacto {impacto} × Urgencia {urgencia}):
+                  Prioridad ({impacto} × {urgencia}):
                 </span>
                 <span
                   className={`inline-flex items-center gap-1.5 rounded-sm px-2 py-0.5 text-xs font-bold ${metaPrioridad.badgeClass}`}
@@ -645,8 +1026,8 @@ export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
                   {metaPrioridad.codigoSLA} — {metaPrioridad.nivel}
                 </span>
               </div>
-              <p className="mt-0.5 text-[11px] text-slate-500">
-                Ubicación registrada:{' '}
+              <p className="mt-0.5 truncate text-[11px] text-slate-500">
+                Ubicación:{' '}
                 <strong className="text-slate-700">
                   {composeUbicacion(departamento, sedeComercial)}
                 </strong>
@@ -656,10 +1037,10 @@ export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
 
           <button
             type="submit"
-            disabled={isSubmitting}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-sm bg-blue-700 px-5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={isSubmitting || isCompressingImg}
+            className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-sm bg-blue-700 px-6 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60 sm:h-11 sm:min-h-0 sm:w-auto"
           >
-            <Send className="h-3.5 w-3.5" aria-hidden="true" />
+            <Send className="h-4 w-4" aria-hidden="true" />
             <span>{isSubmitting ? 'Registrando...' : 'Registrar Requerimiento'}</span>
           </button>
         </div>

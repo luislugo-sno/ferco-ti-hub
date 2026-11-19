@@ -13,13 +13,10 @@ import {
   Plus,
   MapPin,
   Smartphone,
+  Image as ImageIcon,
 } from 'lucide-react';
 import {
   AsignadoA,
-  CATALOGO_DEPARTAMENTOS,
-  CATALOGO_SEDES_DETALLE,
-  CATEGORIAS_TICKET,
-  CategoriaTicket,
   composeUbicacion,
   DEFAULT_ASIGNADO,
   EQUIPO_TI_BI,
@@ -27,8 +24,10 @@ import {
   EstadoTicket,
   estaEstancadoProveedor,
   formatCodigoTicket,
+  FormSchemaConfig,
   getHorasSinMoverse,
   getPrioridadMeta,
+  getSedeMeta,
   NivelImpacto,
   NivelUrgencia,
   NuevoTicketInput,
@@ -46,6 +45,7 @@ import { TicketModalDialog } from './TicketModalDialog';
 
 interface CentroComandoViewProps {
   tickets: TicketTI[];
+  formSchema: FormSchemaConfig;
   onCreateTicket: (input: NuevoTicketInput) => Promise<TicketTI>;
   onUpdateTicket: (
     id: string,
@@ -66,13 +66,12 @@ interface CentroComandoViewProps {
   ) => Promise<void>;
 }
 
-const CATEGORIA_SHORT_LABELS: Record<CategoriaTicket, string> = {
-  'Infraestructura / Redes / Starlink': 'Infraestructura / Starlink',
-  'Odoo ERP / TPV Tiendas': 'Odoo ERP / TPV',
-  'Business Intelligence / Reportes': 'BI / Reportes',
-  'Hardware / Impresoras / Equipos': 'Hardware / Impresoras',
-  'Accesos / Google Workspace': 'Accesos / Workspace',
-  'Desarrollo / Automatización': 'Desarrollo / Auto.',
+const MOBILE_TAB_SHORT_LABELS: Record<EstadoTicket, string> = {
+  'Bandeja de Entrada': 'Bandeja',
+  'En Cola': 'En Cola',
+  'En Progreso': 'En Progreso',
+  'Esperando Proveedor/Tercero': 'Esperando',
+  Resuelto: 'Resuelto',
 };
 
 const NEXT_STATE_MAP: Record<EstadoTicket, EstadoTicket | null> = {
@@ -85,6 +84,7 @@ const NEXT_STATE_MAP: Record<EstadoTicket, EstadoTicket | null> = {
 
 export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
   tickets,
+  formSchema,
   onCreateTicket,
   onUpdateTicket,
 }) => {
@@ -96,7 +96,9 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
 
   // Estado de Captura Rápida (Quick-Add < 5 seg)
   const [quickTitle, setQuickTitle] = useState('');
-  const [quickCat, setQuickCat] = useState<CategoriaTicket>('Odoo ERP / TPV Tiendas');
+  const [quickCat, setQuickCat] = useState<string>(
+    formSchema.categorias_ti[0] || 'Odoo ERP / TPV Tiendas'
+  );
   const [quickDepto, setQuickDepto] = useState<string>('BI/TI');
   const [quickSede, setQuickSede] = useState<string>('N/A (Oficina / No aplica)');
   const [quickImpacto, setQuickImpacto] = useState<NivelImpacto>(2);
@@ -104,6 +106,10 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
   const [quickAsignado, setQuickAsignado] = useState<AsignadoA>(DEFAULT_ASIGNADO);
   const [isQuickSaving, setIsQuickSaving] = useState(false);
   const [quickFeedback, setQuickFeedback] = useState<string | null>(null);
+
+  // Pestaña activa de Estado en Pantallas Móviles (< xl) para evitar scroll horizontal
+  const [mobileActiveEstado, setMobileActiveEstado] =
+    useState<EstadoTicket>('Bandeja de Entrada');
 
   // Filtros Operativos y Modo Foco / Fuego Hoy
   const [modoFoco, setModoFoco] = useState(false);
@@ -132,6 +138,7 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
     setIsQuickSaving(true);
     try {
       const created = await onCreateTicket({
+        tipo_solicitud: 'Soporte Técnico / TI',
         solicitante_nombre: 'Captura Rápida (Control Directo)',
         departamento_tienda: composeUbicacion(quickDepto, quickSede),
         categoria: quickCat,
@@ -143,8 +150,9 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
         asignado_a: quickAsignado,
       });
       setQuickTitle('');
+      setMobileActiveEstado('Bandeja de Entrada');
       setQuickFeedback(
-        `${formatCodigoTicket(created.codigo_ticket)} encolado y Push enviado`
+        `${formatCodigoTicket(created.codigo_ticket)} encolado correctamente`
       );
       setTimeout(() => setQuickFeedback(null), 3500);
     } finally {
@@ -217,12 +225,14 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
     ? tickets.find((t) => t.id === selectedTicket.id) || selectedTicket
     : null;
 
+  const sedesMetaList = formSchema.sedes.map((s) => getSedeMeta(s));
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-3.5 pb-20 lg:pb-6">
       {/* 1. BARRA SUPERIOR DE CAPTURA RÁPIDA (QUICK-ADD < 5 SEGUNDOS) */}
       <section
         aria-label="Captura Rápida de Requerimientos"
-        className="rounded-md border border-slate-200 bg-white p-3.5 shadow-xs"
+        className="rounded-md border border-slate-200 bg-white p-3 shadow-xs sm:p-3.5"
       >
         <form onSubmit={handleQuickAddSubmit} className="space-y-2.5">
           <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
@@ -240,19 +250,19 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
                 onChange={(e) => setQuickTitle(e.target.value)}
                 onKeyDown={handleQuickKeyDown}
                 placeholder="Escriba el requerimiento rápido y presione Enter para encolar..."
-                className="h-9 w-full rounded-sm border border-slate-300 bg-white px-3 text-xs text-slate-900 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700"
+                className="min-h-[44px] w-full rounded-sm border border-slate-300 bg-white px-3 text-base text-slate-900 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700 sm:h-9 sm:min-h-0 sm:text-xs"
               />
             </div>
 
             {/* Selectores compactos de Departamento, Sede, Responsable y Prioridad */}
-            <div className="flex flex-wrap items-center gap-1.5">
+            <div className="grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap sm:items-center">
               <select
                 aria-label="Departamento de captura rápida"
                 value={quickDepto}
                 onChange={(e) => setQuickDepto(e.target.value)}
-                className="h-9 rounded-sm border border-slate-300 bg-slate-50 px-2 text-xs font-medium text-slate-800 focus:border-blue-700 focus:bg-white focus:outline-none"
+                className="min-h-[42px] rounded-sm border border-slate-300 bg-slate-50 px-2 text-xs font-medium text-slate-800 focus:border-blue-700 focus:bg-white focus:outline-none sm:h-9 sm:min-h-0"
               >
-                {CATALOGO_DEPARTAMENTOS.map((dep) => (
+                {formSchema.departamentos.map((dep) => (
                   <option key={dep} value={dep}>
                     Área: {dep}
                   </option>
@@ -263,9 +273,9 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
                 aria-label="Sede comercial de captura rápida"
                 value={quickSede}
                 onChange={(e) => setQuickSede(e.target.value)}
-                className="h-9 max-w-[180px] rounded-sm border border-slate-300 bg-slate-50 px-2 text-xs font-medium text-slate-800 focus:border-blue-700 focus:bg-white focus:outline-none"
+                className="min-h-[42px] truncate rounded-sm border border-slate-300 bg-slate-50 px-2 text-xs font-medium text-slate-800 focus:border-blue-700 focus:bg-white focus:outline-none sm:h-9 sm:min-h-0 sm:max-w-[175px]"
               >
-                {CATALOGO_SEDES_DETALLE.map((s) => (
+                {sedesMetaList.map((s) => (
                   <option key={s.valor} value={s.valor}>
                     {s.nombreCorto}
                   </option>
@@ -276,7 +286,7 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
                 aria-label="Asignar captura rápida a integrante BI/TI"
                 value={quickAsignado}
                 onChange={(e) => setQuickAsignado(e.target.value as AsignadoA)}
-                className="h-9 max-w-[195px] rounded-sm border border-slate-300 bg-slate-50 px-2 text-xs font-medium text-slate-800 focus:border-blue-700 focus:bg-white focus:outline-none"
+                className="min-h-[42px] truncate rounded-sm border border-slate-300 bg-slate-50 px-2 text-xs font-medium text-slate-800 focus:border-blue-700 focus:bg-white focus:outline-none sm:h-9 sm:min-h-0 sm:max-w-[190px]"
               >
                 {EQUIPO_TI_BI.map((m) => (
                   <option key={m} value={m}>
@@ -293,7 +303,7 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
                   setQuickImpacto((imp || 2) as NivelImpacto);
                   setQuickUrgencia((urg || 2) as NivelUrgencia);
                 }}
-                className="h-9 rounded-sm border border-slate-300 bg-slate-50 px-2 text-xs font-medium text-slate-800 focus:border-blue-700 focus:bg-white focus:outline-none"
+                className="min-h-[42px] rounded-sm border border-slate-300 bg-slate-50 px-2 text-xs font-medium text-slate-800 focus:border-blue-700 focus:bg-white focus:outline-none sm:h-9 sm:min-h-0"
               >
                 <option value="1x1">P4 Baja (Score 1)</option>
                 <option value="2x2">P3 Media (Score 4)</option>
@@ -304,7 +314,7 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
               <button
                 type="submit"
                 disabled={isQuickSaving || !quickTitle.trim()}
-                className="inline-flex h-9 items-center gap-1 rounded-sm bg-blue-700 px-3.5 text-xs font-bold text-white transition hover:bg-blue-800 disabled:opacity-50"
+                className="col-span-2 inline-flex min-h-[44px] items-center justify-center gap-1 rounded-sm bg-blue-700 px-4 text-xs font-bold text-white transition hover:bg-blue-800 disabled:opacity-50 sm:col-span-1 sm:h-9 sm:min-h-0"
               >
                 <Plus className="h-3.5 w-3.5" aria-hidden="true" />
                 <span>Guardar</span>
@@ -318,7 +328,7 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
               <span className="mr-1 text-[11px] font-semibold text-slate-500">
                 Categoría (1 clic):
               </span>
-              {CATEGORIAS_TICKET.map((cat) => {
+              {formSchema.categorias_ti.map((cat) => {
                 const selected = quickCat === cat;
                 return (
                   <button
@@ -326,13 +336,13 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
                     type="button"
                     onClick={() => setQuickCat(cat)}
                     aria-pressed={selected}
-                    className={`rounded-sm border px-2.5 py-1 text-[11px] font-semibold transition ${
+                    className={`rounded-sm border px-2 py-1 text-[11px] font-semibold transition ${
                       selected
                         ? 'border-blue-700 bg-blue-700 text-white'
                         : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300 hover:bg-slate-100'
                     }`}
                   >
-                    {CATEGORIA_SHORT_LABELS[cat]}
+                    {cat}
                   </button>
                 );
               })}
@@ -350,33 +360,35 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
         </form>
       </section>
 
-      {/* 2. BARRA DE CONTROL: MODO FOCO + ALERTAS MÓVILES PUSH + WIP + FILTROS (<search>) */}
+      {/* 2. BARRA DE CONTROL: MODO FOCO + ALERTAS TELEGRAM + WIP + FILTROS (<search>) */}
       <search className="flex flex-col gap-2.5 rounded-md border border-slate-200 bg-white p-3 shadow-xs xl:flex-row xl:items-center xl:justify-between">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
           {/* Botón Modo Foco / Fuego Hoy */}
           <button
             type="button"
             aria-pressed={modoFoco}
             onClick={() => setModoFoco((prev) => !prev)}
-            className={`inline-flex h-8 items-center gap-1.5 rounded-sm border px-3 text-xs font-bold transition ${
+            className={`inline-flex min-h-[38px] items-center gap-1.5 rounded-sm border px-2.5 text-xs font-bold transition sm:h-8 sm:min-h-0 ${
               modoFoco
                 ? 'border-red-700 bg-red-600 text-white'
                 : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
             }`}
           >
             <Flame
-              className={`h-3.5 w-3.5 ${modoFoco ? 'text-white' : 'text-red-600'}`}
+              className={`h-3.5 w-3.5 shrink-0 ${
+                modoFoco ? 'text-white' : 'text-red-600'
+              }`}
               aria-hidden="true"
             />
-            <span>Modo Foco / Fuego Hoy</span>
+            <span>Modo Foco</span>
             <span
               className={`rounded-sm px-1.5 py-0.2 font-mono text-[10px] ${
                 modoFoco
                   ? 'bg-red-800 text-white'
-                  : 'bg-slate-100 text-slate-600 border border-slate-200'
+                  : 'border border-slate-200 bg-slate-100 text-slate-600'
               }`}
             >
-              {modoFoco ? 'ACTIVO' : 'OFF'}
+              {modoFoco ? 'ON' : 'OFF'}
             </span>
           </button>
 
@@ -384,9 +396,9 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
           <button
             type="button"
             onClick={() => setIsAlertsModalOpen(true)}
-            className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-slate-300 bg-slate-50 px-2.5 text-xs font-semibold text-slate-800 transition hover:border-blue-700 hover:bg-blue-50 hover:text-blue-800"
+            className="inline-flex min-h-[38px] items-center gap-1.5 rounded-sm border border-slate-300 bg-slate-50 px-2.5 text-xs font-semibold text-slate-800 transition hover:border-blue-700 hover:bg-blue-50 hover:text-blue-800 sm:h-8 sm:min-h-0"
           >
-            <Smartphone className="h-3.5 w-3.5 text-blue-700" aria-hidden="true" />
+            <Smartphone className="h-3.5 w-3.5 shrink-0 text-blue-700" aria-hidden="true" />
             <span>Alertas Telegram</span>
             <span
               className={`rounded-sm border px-1.5 py-0.2 font-mono text-[10px] ${
@@ -395,13 +407,13 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
                   : 'border-slate-200 bg-white text-slate-500'
               }`}
             >
-              {telegramActive ? 'ACTIVO' : 'CONFIGURAR'}
+              {telegramActive ? 'ACTIVO' : 'CONFIG'}
             </span>
           </button>
 
           {/* Indicador de WIP Limit */}
           <div
-            className={`inline-flex h-8 items-center gap-1.5 rounded-sm border px-2.5 text-xs font-semibold ${
+            className={`inline-flex min-h-[38px] items-center gap-1.5 rounded-sm border px-2.5 text-xs font-semibold sm:h-8 sm:min-h-0 ${
               wipLimitExceeded
                 ? 'border-red-400 bg-red-50 text-red-800'
                 : wipAtLimit
@@ -420,26 +432,26 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
               aria-hidden="true"
             />
             <span>
-              WIP En Progreso: <strong className="font-mono">{totalEnProgreso}/3</strong>
+              WIP: <strong className="font-mono">{totalEnProgreso}/3</strong>
             </span>
             {wipLimitExceeded && (
-              <span className="rounded-sm bg-red-600 px-1.5 py-0.2 text-[10px] font-bold uppercase text-white">
-                Límite Excedido
+              <span className="rounded-sm bg-red-600 px-1 py-0.2 text-[9px] font-bold uppercase text-white">
+                Excedido
               </span>
             )}
           </div>
 
           {totalEstancadosProveedor > 0 && (
-            <div className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-amber-400 bg-amber-50 px-2.5 text-xs font-semibold text-amber-900">
-              <AlertOctagon className="h-3.5 w-3.5 text-amber-700" aria-hidden="true" />
-              <span>{totalEstancadosProveedor} ticket(s) &gt;48h en Proveedor</span>
+            <div className="inline-flex min-h-[38px] items-center gap-1 rounded-sm border border-amber-400 bg-amber-50 px-2 text-xs font-semibold text-amber-900 sm:h-8 sm:min-h-0">
+              <AlertOctagon className="h-3.5 w-3.5 shrink-0 text-amber-700" aria-hidden="true" />
+              <span>{totalEstancadosProveedor} &gt;48h en 3ros</span>
             </div>
           )}
         </div>
 
         {/* Filtros por Texto, Departamento, Sede y Especialista */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative flex-1 sm:w-48 sm:flex-initial">
+        <div className="grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap sm:items-center sm:gap-2">
+          <div className="relative col-span-2 sm:w-48">
             <Search
               className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
               aria-hidden="true"
@@ -453,7 +465,7 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Buscar FER-TI-00X, asunto..."
-              className="h-8 w-full rounded-sm border border-slate-300 bg-white pl-8 pr-2.5 text-xs text-slate-900 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none"
+              className="min-h-[40px] w-full rounded-sm border border-slate-300 bg-white pl-8 pr-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none sm:h-8 sm:min-h-0 sm:text-xs"
             />
           </div>
 
@@ -465,10 +477,10 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
               id={filterDeptoId}
               value={filtroDepartamento}
               onChange={(e) => setFiltroDepartamento(e.target.value)}
-              className="h-8 rounded-sm border border-slate-300 bg-white px-2 text-xs font-medium text-slate-700 focus:border-blue-700 focus:outline-none"
+              className="min-h-[40px] w-full rounded-sm border border-slate-300 bg-white px-2 text-xs font-medium text-slate-700 focus:border-blue-700 focus:outline-none sm:h-8 sm:min-h-0"
             >
-              <option value="TODOS">Todos los Departamentos</option>
-              {CATALOGO_DEPARTAMENTOS.map((dep) => (
+              <option value="TODOS">Todos los Deptos.</option>
+              {formSchema.departamentos.map((dep) => (
                 <option key={dep} value={dep}>
                   {dep}
                 </option>
@@ -484,10 +496,10 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
               id={filterSedeId}
               value={filtroSede}
               onChange={(e) => setFiltroSede(e.target.value)}
-              className="h-8 max-w-[180px] rounded-sm border border-slate-300 bg-white px-2 text-xs font-medium text-slate-700 focus:border-blue-700 focus:outline-none"
+              className="min-h-[40px] w-full truncate rounded-sm border border-slate-300 bg-white px-2 text-xs font-medium text-slate-700 focus:border-blue-700 focus:outline-none sm:h-8 sm:min-h-0 sm:max-w-[175px]"
             >
-              <option value="TODAS">Todas las Sedes / Tiendas</option>
-              {CATALOGO_SEDES_DETALLE.map((s) => (
+              <option value="TODAS">Todas las Sedes</option>
+              {sedesMetaList.map((s) => (
                 <option key={s.valor} value={s.valor}>
                   {s.nombreCorto}
                 </option>
@@ -495,7 +507,7 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
             </select>
           </div>
 
-          <div>
+          <div className="col-span-2 sm:col-span-1">
             <label htmlFor={filterAsignadoId} className="sr-only">
               Filtrar por integrante del equipo BI/TI
             </label>
@@ -503,7 +515,7 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
               id={filterAsignadoId}
               value={filtroAsignado}
               onChange={(e) => setFiltroAsignado(e.target.value)}
-              className="h-8 max-w-[205px] rounded-sm border border-slate-300 bg-white px-2 text-xs font-semibold text-slate-800 focus:border-blue-700 focus:outline-none"
+              className="min-h-[40px] w-full truncate rounded-sm border border-slate-300 bg-white px-2 text-xs font-semibold text-slate-800 focus:border-blue-700 focus:outline-none sm:h-8 sm:min-h-0 sm:max-w-[200px]"
             >
               <option value="TODOS">Equipo BI/TI ({tickets.length})</option>
               {EQUIPO_TI_BI.map((miembro) => (
@@ -516,8 +528,55 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
         </div>
       </search>
 
-      {/* 3. TABLERO KANBAN INTERACTIVO POR ESTADO (5 COLUMNAS SOBRIAS) */}
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+      {/* 3. SELECTOR DE PESTAÑAS POR ESTADO EN MÓVIL/TABLET (< xl) PARA EVITAR SCROLL HORIZONTAL */}
+      <div
+        role="tablist"
+        aria-label="Estados del Kanban en vista móvil"
+        className="grid grid-cols-5 gap-1 rounded-md border border-slate-200 bg-white p-1 shadow-xs xl:hidden"
+      >
+        {ESTADOS_TICKET.map((st) => {
+          const count = filteredTickets.filter((t) => t.estado === st).length;
+          const isSelected = mobileActiveEstado === st;
+          const isWipCol = st === 'En Progreso' && wipLimitExceeded;
+
+          return (
+            <button
+              key={st}
+              type="button"
+              role="tab"
+              aria-selected={isSelected}
+              onClick={() => setMobileActiveEstado(st)}
+              className={`flex min-h-[48px] flex-col items-center justify-center rounded-sm px-1 py-1 text-center transition ${
+                isSelected
+                  ? isWipCol
+                    ? 'bg-red-600 text-white'
+                    : 'bg-blue-700 text-white'
+                  : isWipCol
+                  ? 'border border-red-400 bg-red-50 text-red-900'
+                  : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <span className="w-full truncate text-[10px] font-bold leading-tight sm:text-xs">
+                {MOBILE_TAB_SHORT_LABELS[st]}
+              </span>
+              <span
+                className={`mt-0.5 rounded-sm px-1.5 font-mono text-[10px] font-bold ${
+                  isSelected
+                    ? 'bg-black/20 text-white'
+                    : isWipCol
+                    ? 'bg-red-600 text-white'
+                    : 'bg-slate-200 text-slate-800'
+                }`}
+              >
+                {st === 'En Progreso' ? `${count}/3` : count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 4. TABLERO KANBAN INTERACTIVO POR ESTADO (1 COLUMNA ACTIVA EN MÓVIL, 5 EN DESKTOP XL) */}
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-5">
         {ESTADOS_TICKET.map((columnaEstado) => {
           const colTickets = filteredTickets
             .filter((t) => t.estado === columnaEstado)
@@ -526,6 +585,7 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
           const isEnProgresoCol = columnaEstado === 'En Progreso';
           const isProveedorCol = columnaEstado === 'Esperando Proveedor/Tercero';
           const isDragOver = dragOverCol === columnaEstado;
+          const isVisibleOnMobile = mobileActiveEstado === columnaEstado;
 
           // Estilo de columna en gris claro corporativo + alerta WIP Limit
           let colBorderClasses = 'border border-slate-200 bg-slate-100';
@@ -547,7 +607,9 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
               }}
               onDragLeave={() => setDragOverCol(null)}
               onDrop={() => handleDropOnColumn(columnaEstado)}
-              className={`flex flex-col rounded-md p-2.5 transition min-h-[540px] ${colBorderClasses}`}
+              className={`${
+                isVisibleOnMobile ? 'flex' : 'hidden xl:flex'
+              } flex-col rounded-md p-2.5 transition xl:min-h-[540px] ${colBorderClasses}`}
             >
               {/* Cabecera de Columna */}
               <div className="mb-2.5 border-b border-slate-200 pb-2">
@@ -615,6 +677,7 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
                     const ubic = parseUbicacion(ticket.departamento_tienda);
                     const nombreCortoAsignado =
                       ticket.asignado_a.split(' - ')[0] || ticket.asignado_a;
+                    const imgCount = ticket.imagenes_urls?.length || 0;
 
                     return (
                       <article
@@ -626,13 +689,29 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
                           setDragOverCol(null);
                         }}
                         onClick={() => setSelectedTicket(ticket)}
-                        className={`group relative cursor-pointer rounded-sm border border-slate-200 bg-white p-2.5 shadow-xs transition hover:border-slate-400 ${meta.borderClass}`}
+                        className={`group relative cursor-pointer rounded-sm border border-slate-200 bg-white p-3 shadow-xs transition hover:border-slate-400 sm:p-2.5 ${meta.borderClass}`}
                       >
                         {/* Fila 1: Código + Badge Score Prioridad */}
                         <div className="flex items-center justify-between gap-1.5">
-                          <span className="font-mono text-xs font-bold text-blue-700 group-hover:underline">
-                            {formatCodigoTicket(ticket.codigo_ticket)}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono text-xs font-bold text-blue-700 group-hover:underline">
+                              {formatCodigoTicket(ticket.codigo_ticket)}
+                            </span>
+                            {ticket.tipo_solicitud === 'Consultas sobre Odoo' && (
+                              <span className="rounded-sm border border-blue-200 bg-blue-50 px-1.5 py-0.2 text-[9px] font-bold uppercase text-blue-800">
+                                Odoo
+                              </span>
+                            )}
+                            {imgCount > 0 && (
+                              <span
+                                className="inline-flex items-center gap-0.5 rounded-sm border border-slate-300 bg-slate-100 px-1.5 py-0.2 text-[10px] font-semibold text-slate-700"
+                                title={`${imgCount} evidencia(s) adjunta(s)`}
+                              >
+                                <ImageIcon className="h-2.5 w-2.5 text-blue-700" aria-hidden="true" />
+                                {imgCount}
+                              </span>
+                            )}
+                          </div>
 
                           <span
                             className={`inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[10px] font-bold ${meta.badgeClass}`}
@@ -661,7 +740,7 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
                         {/* Categoría + Departamento + Sede */}
                         <div className="mt-2 space-y-1 text-[11px] text-slate-600">
                           <div className="inline-block rounded-sm border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700">
-                            {CATEGORIA_SHORT_LABELS[ticket.categoria] || ticket.categoria}
+                            {ticket.categoria}
                           </div>
 
                           <div className="flex items-center gap-1 truncate text-[11px]">
@@ -709,7 +788,7 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
                             title={ticket.asignado_a}
                           >
                             <SpecialistBadge nombre={ticket.asignado_a} size="sm" />
-                            <span className="truncate max-w-[100px]">
+                            <span className="truncate max-w-[110px]">
                               {nombreCortoAsignado}
                             </span>
                           </div>
@@ -729,7 +808,7 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
                                 onClick={() =>
                                   onUpdateTicket(ticket.id, { estado: nextEstado })
                                 }
-                                className="inline-flex items-center gap-0.5 rounded-sm border border-slate-300 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-800 transition hover:border-blue-700 hover:bg-blue-700 hover:text-white"
+                                className="inline-flex min-h-[30px] items-center gap-0.5 rounded-sm border border-slate-300 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-800 transition hover:border-blue-700 hover:bg-blue-700 hover:text-white sm:min-h-0"
                               >
                                 <span>
                                   {nextEstado === 'Resuelto' ? 'Resolver' : nextEstado}
@@ -753,6 +832,7 @@ export const CentroComandoView: React.FC<CentroComandoViewProps> = ({
       <TicketModalDialog
         ticket={activeModalTicket}
         onClose={() => setSelectedTicket(null)}
+        formSchema={formSchema}
         onUpdateTicket={onUpdateTicket}
       />
 

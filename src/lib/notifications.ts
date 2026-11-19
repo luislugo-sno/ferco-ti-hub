@@ -113,16 +113,30 @@ export function buildTelegramTicketHtml(ticket: TicketTI): string {
       ? 'Media'
       : 'Baja';
 
-  return [
+  const lines = [
     `<b>${headerLine}</b>`,
     '',
     `<b>Prioridad:</b> Score ${ticket.score_prioridad} (${nivelTexto})`,
+    ...(ticket.tipo_solicitud
+      ? [`<b>Tipo:</b> ${escapeHtml(ticket.tipo_solicitud)}`]
+      : []),
     `<b>Solicitante:</b> ${escapeHtml(ticket.solicitante_nombre)}`,
     `<b>Ubicación:</b> ${escapeHtml(ticket.departamento_tienda)}`,
     `<b>Categoría:</b> ${escapeHtml(ticket.categoria)}`,
     `<b>Asunto:</b> ${escapeHtml(ticket.titulo)}`,
     `<b>Asignado a:</b> ${escapeHtml(ticket.asignado_a)}`,
-  ].join('\n');
+  ];
+
+  const imgCount = ticket.imagenes_urls?.length || 0;
+  if (imgCount > 0) {
+    lines.push(
+      `<b>Evidencias adjuntas:</b> 📷 ${imgCount} ${
+        imgCount === 1 ? 'imagen adjunta' : 'imágenes adjuntas'
+      }`
+    );
+  }
+
+  return lines.join('\n');
 }
 
 /**

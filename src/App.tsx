@@ -6,15 +6,19 @@ import {
 import { PortalSolicitudView } from './components/PortalSolicitudView';
 import { CentroComandoView } from './components/CentroComandoView';
 import { DashboardKPIsView } from './components/DashboardKPIsView';
+import { ConfigurarFormularioView } from './components/ConfigurarFormularioView';
 import { PinAuthDialog } from './components/PinAuthDialog';
 import {
   createTicketTI,
+  fetchAdminPinFromSupabase,
+  fetchFormSchemaFromSupabase,
   fetchTicketsTI,
+  getCachedFormSchema,
   subscribeToTicketsTI,
   updateTicketTI,
 } from './lib/supabase';
 import { triggerBrowserTicketNotification } from './lib/notifications';
-import { NuevoTicketInput, TicketTI } from './types/tickets';
+import { FormSchemaConfig, NuevoTicketInput, TicketTI } from './types/tickets';
 
 const SESSION_UNLOCK_KEY = 'ferco_ti_bi_unlocked_session';
 
@@ -22,11 +26,15 @@ function getInitialTabFromUrl(): ActiveTab {
   const path = window.location.pathname.toLowerCase();
   if (path.includes('/comando') || path.includes('/kanban')) return 'comando';
   if (path.includes('/metricas') || path.includes('/kpis')) return 'metricas';
+  if (path.includes('/formulario') || path.includes('/configurar')) return 'formulario';
   return 'solicitar';
 }
 
 export const App: React.FC = () => {
   const [tickets, setTickets] = useState<TicketTI[]>([]);
+  const [formSchema, setFormSchema] = useState<FormSchemaConfig>(() =>
+    getCachedFormSchema()
+  );
   const [connectionMode, setConnectionMode] = useState<'supabase' | 'local'>('local');
   const [isLoading, setIsLoading] = useState(true);
 
@@ -37,7 +45,12 @@ export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
     const requested = getInitialTabFromUrl();
     const unlocked = sessionStorage.getItem(SESSION_UNLOCK_KEY) === 'true';
-    if ((requested === 'comando' || requested === 'metricas') && !unlocked) {
+    if (
+      (requested === 'comando' ||
+        requested === 'metricas' ||
+        requested === 'formulario') &&
+      !unlocked
+    ) {
       return 'solicitar';
     }
     return requested;
@@ -51,7 +64,12 @@ export const App: React.FC = () => {
   const [pendingProtectedTab, setPendingProtectedTab] = useState<ActiveTab | null>(() => {
     const requested = getInitialTabFromUrl();
     const unlocked = sessionStorage.getItem(SESSION_UNLOCK_KEY) === 'true';
-    if ((requested === 'comando' || requested === 'metricas') && !unlocked) {
+    if (
+      (requested === 'comando' ||
+        requested === 'metricas' ||
+        requested === 'formulario') &&
+      !unlocked
+    ) {
       return requested;
     }
     return null;
@@ -64,30 +82,45 @@ export const App: React.FC = () => {
     setIsLoading(false);
   }, []);
 
+  const loadAppConfig = useCallback(async () => {
+    const [schemaRes] = await Promise.all([
+      fetchFormSchemaFromSupabase(),
+      fetchAdminPinFromSupabase(),
+    ]);
+    setFormSchema(schemaRes.schema);
+  }, []);
+
   useEffect(() => {
     loadTickets();
+    loadAppConfig();
+
     const unsubscribe = subscribeToTicketsTI(
       () => {
         loadTickets();
       },
       (newTicket) => {
-        // Si el Centro de Comando está abierto (o la sesión TI está desbloqueada), lanzar notificación nativa + beep Web Audio
         if (
           activeTabRef.current === 'comando' ||
           sessionStorage.getItem(SESSION_UNLOCK_KEY) === 'true'
         ) {
           triggerBrowserTicketNotification(newTicket);
         }
+      },
+      () => {
+        loadAppConfig();
       }
     );
     return () => unsubscribe();
-  }, [loadTickets]);
+  }, [loadTickets, loadAppConfig]);
 
-  // Sincronización con el historial del navegador (/solicitar, /comando, /metricas)
+  // Sincronización con el historial del navegador
   useEffect(() => {
     const onPopState = () => {
       const target = getInitialTabFromUrl();
-      if ((target === 'comando' || target === 'metricas') && !isUnlocked) {
+      if (
+        (target === 'comando' || target === 'metricas' || target === 'formulario') &&
+        !isUnlocked
+      ) {
         setPendingProtectedTab(target);
       } else {
         setActiveTab(target);
@@ -97,18 +130,23 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('popstate', onPopState);
   }, [isUnlocked]);
 
+  const getPathForTab = (tab: ActiveTab): string => {
+    if (tab === 'comando') return '/comando';
+    if (tab === 'metricas') return '/metricas';
+    if (tab === 'formulario') return '/configurar-formulario';
+    return '/solicitar';
+  };
+
   const navigateToTab = (tab: ActiveTab) => {
-    if ((tab === 'comando' || tab === 'metricas') && !isUnlocked) {
+    if (
+      (tab === 'comando' || tab === 'metricas' || tab === 'formulario') &&
+      !isUnlocked
+    ) {
       setPendingProtectedTab(tab);
       return;
     }
     setActiveTab(tab);
-    const nextPath =
-      tab === 'solicitar'
-        ? '/solicitar'
-        : tab === 'comando'
-        ? '/comando'
-        : '/metricas';
+    const nextPath = getPathForTab(tab);
     if (window.location.pathname !== nextPath) {
       window.history.pushState({}, '', nextPath);
     }
@@ -120,8 +158,7 @@ export const App: React.FC = () => {
     const destination = pendingProtectedTab || 'comando';
     setPendingProtectedTab(null);
     setActiveTab(destination);
-    const nextPath = destination === 'comando' ? '/comando' : '/metricas';
-    window.history.pushState({}, '', nextPath);
+    window.history.pushState({}, '', getPathForTab(destination));
   };
 
   const handleLock = () => {
@@ -166,7 +203,7 @@ export const App: React.FC = () => {
   ).length;
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
+    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 overflow-x-hidden">
       <HeaderInstitucional
         activeTab={activeTab}
         onSelectTab={navigateToTab}
@@ -177,7 +214,7 @@ export const App: React.FC = () => {
         criticalCount={criticalCount}
       />
 
-      <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-5 sm:px-6 lg:px-8">
+      <main className="mx-auto w-full max-w-[1600px] flex-1 px-3 py-3 sm:px-6 sm:py-5 lg:px-8">
         {isLoading ? (
           <div className="flex h-64 items-center justify-center">
             <div className="flex items-center gap-2.5 text-xs font-semibold uppercase tracking-wider text-slate-600">
@@ -186,29 +223,39 @@ export const App: React.FC = () => {
             </div>
           </div>
         ) : activeTab === 'solicitar' ? (
-          <PortalSolicitudView onCreateTicket={handleCreateTicket} />
+          <PortalSolicitudView
+            onCreateTicket={handleCreateTicket}
+            formSchema={formSchema}
+          />
         ) : activeTab === 'comando' ? (
           <CentroComandoView
             tickets={tickets}
+            formSchema={formSchema}
             onCreateTicket={handleCreateTicket}
             onUpdateTicket={handleUpdateTicket}
+          />
+        ) : activeTab === 'formulario' && isUnlocked ? (
+          <ConfigurarFormularioView
+            formSchema={formSchema}
+            onSchemaUpdated={(next) => setFormSchema(next)}
           />
         ) : (
           <DashboardKPIsView
             tickets={tickets}
+            formSchema={formSchema}
             onUpdateTicket={handleUpdateTicket}
           />
         )}
       </main>
 
-      <footer className="border-t border-slate-200 bg-white py-3 text-center text-xs text-slate-500">
+      <footer className="hidden border-t border-slate-200 bg-white py-3 text-center text-xs text-slate-500 lg:block">
         <div className="mx-auto flex max-w-[1600px] flex-col items-center justify-between gap-2 px-4 sm:flex-row sm:px-6 lg:px-8">
           <span className="font-medium text-slate-600">
             Grupo Comercializadora Ferco • Gerencia de Inteligencia de Negocios y
             Tecnología
           </span>
           <span className="text-slate-500">
-            Sistema ITSM • Matriz Impacto × Urgencia • Alertas Push Telegram Activas
+            Sistema ITSM • Matriz Impacto × Urgencia • Sincronización Global Supabase
           </span>
         </div>
       </footer>
@@ -218,6 +265,8 @@ export const App: React.FC = () => {
         targetName={
           pendingProtectedTab === 'metricas'
             ? 'Métricas / KPIs Ejecutivos'
+            : pendingProtectedTab === 'formulario'
+            ? 'Configurar Formulario y Catálogos'
             : 'Centro de Comando (Kanban / Foco)'
         }
         onSuccess={handleUnlockSuccess}

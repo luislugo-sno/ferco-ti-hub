@@ -1,10 +1,6 @@
-export type CategoriaTicket =
-  | 'Infraestructura / Redes / Starlink'
-  | 'Odoo ERP / TPV Tiendas'
-  | 'Business Intelligence / Reportes'
-  | 'Hardware / Impresoras / Equipos'
-  | 'Accesos / Google Workspace'
-  | 'Desarrollo / Automatización';
+export type TipoSolicitud = 'Soporte Técnico / TI' | 'Consultas sobre Odoo';
+
+export type CategoriaTicket = string;
 
 export type EstadoTicket =
   | 'Bandeja de Entrada'
@@ -22,14 +18,44 @@ export type AsignadoA =
 export type NivelImpacto = 1 | 2 | 3;
 export type NivelUrgencia = 1 | 2 | 3;
 
+export type TipoCampoPersonalizado =
+  | 'texto_corto'
+  | 'parrafo'
+  | 'lista_desplegable'
+  | 'casilla_verificacion';
+
+export type AplicaAPregunta =
+  | 'Todos'
+  | 'Soporte Técnico / TI'
+  | 'Consultas sobre Odoo';
+
+export interface PreguntaPersonalizada {
+  id: string;
+  titulo: string;
+  tipo: TipoCampoPersonalizado;
+  opciones: string[];
+  obligatoria: boolean;
+  aplica_a: AplicaAPregunta;
+  activa: boolean;
+}
+
+export interface FormSchemaConfig {
+  departamentos: string[];
+  sedes: string[];
+  categorias_ti: string[];
+  modulos_odoo: string[];
+  preguntas_personalizadas: PreguntaPersonalizada[];
+}
+
 export interface TicketTI {
   id: string;
   codigo_ticket: number;
   created_at: string;
   updated_at?: string;
+  tipo_solicitud?: TipoSolicitud;
   solicitante_nombre: string;
   departamento_tienda: string;
-  categoria: CategoriaTicket;
+  categoria: string;
   titulo: string;
   descripcion: string;
   impacto: NivelImpacto;
@@ -39,12 +65,15 @@ export interface TicketTI {
   asignado_a: AsignadoA;
   notas_tecnicas: string | null;
   fecha_resolucion: string | null;
+  imagenes_urls?: string[];
+  respuestas_extra?: Record<string, string | boolean>;
 }
 
 export interface NuevoTicketInput {
+  tipo_solicitud?: TipoSolicitud;
   solicitante_nombre: string;
   departamento_tienda: string;
-  categoria: CategoriaTicket;
+  categoria: string;
   titulo: string;
   descripcion: string;
   impacto: NivelImpacto;
@@ -52,15 +81,28 @@ export interface NuevoTicketInput {
   estado?: EstadoTicket;
   asignado_a?: AsignadoA;
   notas_tecnicas?: string;
+  imagenes_urls?: string[];
+  respuestas_extra?: Record<string, string | boolean>;
 }
 
-export const CATEGORIAS_TICKET: CategoriaTicket[] = [
+export const CATEGORIAS_TICKET: string[] = [
   'Infraestructura / Redes / Starlink',
   'Odoo ERP / TPV Tiendas',
   'Business Intelligence / Reportes',
   'Hardware / Impresoras / Equipos',
   'Accesos / Google Workspace',
   'Desarrollo / Automatización',
+];
+
+export const MODULOS_ODOO_DEFAULT: string[] = [
+  'Punto de Venta / TPV',
+  'Inventario',
+  'Ventas / Facturación',
+  'Compras',
+  'Contabilidad',
+  'Permisos / Usuarios',
+  'Reportes',
+  'Otro',
 ];
 
 export const ESTADOS_TICKET: EstadoTicket[] = [
@@ -121,7 +163,11 @@ export interface SedeComercialItem {
   nombreCorto: string;
   razonSocial?: string;
   municipio?: string;
-  grupo: 'General / Corporativo' | 'Centros Logísticos (CDP / CDA)' | 'Tiendas SNÖ' | 'Tiendas Chönkies';
+  grupo:
+    | 'General / Corporativo'
+    | 'Centros Logísticos (CDP / CDA)'
+    | 'Tiendas SNÖ'
+    | 'Tiendas Chönkies';
 }
 
 export const CATALOGO_SEDES_DETALLE: SedeComercialItem[] = [
@@ -348,6 +394,39 @@ export const CATALOGO_SEDES_DETALLE: SedeComercialItem[] = [
 ];
 
 export const CATALOGO_SEDES: string[] = CATALOGO_SEDES_DETALLE.map((s) => s.valor);
+
+export const DEFAULT_FORM_SCHEMA: FormSchemaConfig = {
+  departamentos: [...CATALOGO_DEPARTAMENTOS],
+  sedes: [...CATALOGO_SEDES],
+  categorias_ti: [...CATEGORIAS_TICKET],
+  modulos_odoo: [...MODULOS_ODOO_DEFAULT],
+  preguntas_personalizadas: [],
+};
+
+export function getSedeMeta(valorSede: string): SedeComercialItem {
+  const found = CATALOGO_SEDES_DETALLE.find((s) => s.valor === valorSede);
+  if (found) return found;
+
+  // Si es una sede añadida dinámicamente desde el Editor de Formulario
+  let grupo: SedeComercialItem['grupo'] = 'General / Corporativo';
+  if (valorSede.toUpperCase().startsWith('SNÖ') || valorSede.toUpperCase().startsWith('SNO')) {
+    grupo = 'Tiendas SNÖ';
+  } else if (valorSede.toLowerCase().includes('chönkies') || valorSede.toLowerCase().includes('chonkies')) {
+    grupo = 'Tiendas Chönkies';
+  } else if (valorSede.startsWith('CDP') || valorSede.startsWith('CDA')) {
+    grupo = 'Centros Logísticos (CDP / CDA)';
+  }
+
+  const nombreCorto = valorSede.includes(' (')
+    ? valorSede.split(' (')[0].trim()
+    : valorSede;
+
+  return {
+    valor: valorSede,
+    nombreCorto,
+    grupo,
+  };
+}
 
 export function composeUbicacion(departamento: string, sede: string): string {
   const dep = departamento.trim();
