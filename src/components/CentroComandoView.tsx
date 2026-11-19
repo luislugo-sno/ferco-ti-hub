@@ -54,6 +54,7 @@ interface CentroComandoViewProps {
         TicketTI,
         | 'estado'
         | 'asignado_a'
+        | 'nota_publica'
         | 'notas_tecnicas'
         | 'impacto'
         | 'urgencia'

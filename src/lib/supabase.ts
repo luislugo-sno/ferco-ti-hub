@@ -5,6 +5,7 @@ import {
   FormSchemaConfig,
   normalizeAsignadoA,
   NuevoTicketInput,
+  PublicTicketTI,
   TicketTI,
 } from '../types/tickets';
 import { sendTelegramTicketNotification } from './notifications';
@@ -50,6 +51,8 @@ const SEED_TICKETS: TicketTI[] = [
     score_prioridad: 6,
     estado: 'Esperando Proveedor/Tercero',
     asignado_a: 'Plinio Becerra - Analista de Soluciones de Negocio',
+    nota_publica:
+      'El enlace de respaldo Starlink se encuentra operativo en la tienda mientras el proveedor externo de fibra óptica realiza la reparación en la troncal de la zona.',
     notas_tecnicas:
       'Se abrió ticket #ISP-99412 con el proveedor de fibra óptica. Failover automático en router MikroTik activo sobre antena Starlink.',
     fecha_resolucion: null,
@@ -73,6 +76,8 @@ const SEED_TICKETS: TicketTI[] = [
     score_prioridad: 9,
     estado: 'En Progreso',
     asignado_a: 'Luis Lugo - Analista BI/TI',
+    nota_publica:
+      'Se está verificando el asiento del diario de pagos en divisas junto con Contabilidad para habilitar el cierre de la Caja 03.',
     notas_tecnicas:
       'Revisando diarios de pago IGTF y conciliación de pos.order en Odoo. Validando con CONTABILIDAD antes de forzar cierre.',
     fecha_resolucion: null,
@@ -96,6 +101,8 @@ const SEED_TICKETS: TicketTI[] = [
     score_prioridad: 6,
     estado: 'En Progreso',
     asignado_a: 'Juan García - Gerente BI/TI',
+    nota_publica:
+      'El modelo de datos ya fue actualizado con los cierres recientes. Estamos validando los indicadores por sede comercial.',
     notas_tecnicas:
       'Vista materializada en PostgreSQL lista. Ajustando filtros por Razón Social y Municipio.',
     fecha_resolucion: null,
@@ -119,6 +126,7 @@ const SEED_TICKETS: TicketTI[] = [
     score_prioridad: 4,
     estado: 'En Cola',
     asignado_a: 'Leonardo Semprun - Especialista de Soluciones de Negocio',
+    nota_publica: '',
     notas_tecnicas: 'Se diseñará validador previo de SKU para evitar duplicados.',
     fecha_resolucion: null,
     imagenes_urls: [],
@@ -141,6 +149,7 @@ const SEED_TICKETS: TicketTI[] = [
     score_prioridad: 2,
     estado: 'Bandeja de Entrada',
     asignado_a: 'Luis Lugo - Analista BI/TI',
+    nota_publica: '',
     notas_tecnicas: '',
     fecha_resolucion: null,
     imagenes_urls: [],
@@ -163,6 +172,8 @@ const SEED_TICKETS: TicketTI[] = [
     score_prioridad: 4,
     estado: 'Resuelto',
     asignado_a: 'Plinio Becerra - Analista de Soluciones de Negocio',
+    nota_publica:
+      'Impresora Zebra calibrada y operativa con formato estándar 50x25mm en la estación de recepción de CDA-CCS.',
     notas_tecnicas:
       'Se calibró sensor de gap en Zebra ZD220 y se fijó perfil 50x25mm predeterminado en el servidor de impresión.',
     fecha_resolucion: horasAtras(6),
@@ -176,6 +187,7 @@ function normalizeTicketsList(list: TicketTI[]): TicketTI[] {
     ...t,
     tipo_solicitud: t.tipo_solicitud || 'Soporte Técnico / TI',
     asignado_a: normalizeAsignadoA(t.asignado_a),
+    nota_publica: t.nota_publica ?? '',
     score_prioridad: t.score_prioridad ?? t.impacto * t.urgencia,
     imagenes_urls: Array.isArray(t.imagenes_urls) ? t.imagenes_urls : [],
     respuestas_extra:
@@ -214,6 +226,77 @@ function saveLocalTickets(tickets: TicketTI[], newlyCreated?: TicketTI): void {
   } catch (err) {
     console.error('Error guardando tickets en almacenamiento local:', err);
   }
+}
+
+/**
+ * Sanitiza un TicketTI eliminando estrictamente notas_tecnicas para el Portal Público
+ */
+export function sanitizePublicTicket(ticket: TicketTI): PublicTicketTI {
+  const { notas_tecnicas: _privateNotes, ...publicFields } = ticket;
+  return {
+    ...publicFields,
+    nota_publica: ticket.nota_publica ?? '',
+  };
+}
+
+/**
+ * Consulta un ticket por su número de codigo_ticket para la vista pública "Consultar mi Ticket",
+ * excluyendo bajo cualquier circunstancia el campo privado notas_tecnicas.
+ */
+export async function fetchPublicTicketByCodigo(
+  codigoNumero: number
+): Promise<{ ticket: PublicTicketTI | null; mode: 'supabase' | 'local' }> {
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('tickets_ti')
+        .select(
+          'id, codigo_ticket, created_at, updated_at, tipo_solicitud, solicitante_nombre, departamento_tienda, categoria, titulo, descripcion, impacto, urgencia, score_prioridad, estado, asignado_a, nota_publica, fecha_resolucion, imagenes_urls, respuestas_extra'
+        )
+        .eq('codigo_ticket', codigoNumero)
+        .maybeSingle();
+
+      if (!error && data) {
+        const normalized = normalizeTicketsList([data as TicketTI])[0];
+        return {
+          ticket: sanitizePublicTicket(normalized),
+          mode: 'supabase',
+        };
+      }
+
+      // Fallback si la tabla aún no tiene las columnas nuevas en Supabase
+      if (error) {
+        const retry = await supabase
+          .from('tickets_ti')
+          .select(
+            'id, codigo_ticket, created_at, updated_at, solicitante_nombre, departamento_tienda, categoria, titulo, descripcion, impacto, urgencia, score_prioridad, estado, asignado_a, fecha_resolucion'
+          )
+          .eq('codigo_ticket', codigoNumero)
+          .maybeSingle();
+
+        if (!retry.error && retry.data) {
+          const normalized = normalizeTicketsList([retry.data as TicketTI])[0];
+          return {
+            ticket: sanitizePublicTicket(normalized),
+            mode: 'supabase',
+          };
+        }
+      }
+
+      if (!error && !data) {
+        return { ticket: null, mode: 'supabase' };
+      }
+    } catch (err) {
+      console.warn('Fallback a búsqueda local para Consultar mi Ticket:', err);
+    }
+  }
+
+  const localList = getLocalTickets();
+  const found = localList.find((t) => Number(t.codigo_ticket) === codigoNumero);
+  return {
+    ticket: found ? sanitizePublicTicket(found) : null,
+    mode: 'local',
+  };
 }
 
 // ============================================================================
@@ -257,7 +340,6 @@ export async function fetchAdminPinFromSupabase(): Promise<{
         }
       }
 
-      // Si aún no existe la fila 'admin_pin' en app_config, inicializarla automáticamente
       if (!error && !data) {
         await supabase.from('app_config').upsert(
           {
@@ -387,7 +469,6 @@ export async function fetchFormSchemaFromSupabase(): Promise<{
         return { schema: normalized, mode: 'supabase' };
       }
 
-      // Inicializar automáticamente en Supabase si aún no existe 'form_schema'
       if (!error && !data) {
         await supabase.from('app_config').upsert(
           {
@@ -486,7 +567,6 @@ export async function compressImageWithCanvas(
           return;
         }
 
-        // Fondo blanco por si es un PNG con transparencia convertido a JPEG
         ctx.fillStyle = '#FFFFFF';
         ctx.fillRect(0, 0, targetWidth, targetHeight);
         ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
@@ -618,6 +698,7 @@ export async function createTicketTI(
     urgencia: input.urgencia,
     estado: input.estado || 'Bandeja de Entrada',
     asignado_a: normalizeAsignadoA(input.asignado_a || DEFAULT_ASIGNADO),
+    nota_publica: input.nota_publica ?? '',
     notas_tecnicas: input.notas_tecnicas ?? '',
     imagenes_urls: imagenesUrls,
     respuestas_extra: respuestasExtra,
@@ -635,6 +716,7 @@ export async function createTicketTI(
         ...(data as TicketTI),
         tipo_solicitud: data.tipo_solicitud || tipoSolicitud,
         asignado_a: normalizeAsignadoA(data.asignado_a),
+        nota_publica: data.nota_publica ?? '',
         score_prioridad: data.score_prioridad ?? data.impacto * data.urgencia,
         imagenes_urls: Array.isArray(data.imagenes_urls)
           ? data.imagenes_urls
@@ -648,7 +730,6 @@ export async function createTicketTI(
       return { ticket: created, mode: 'supabase' };
     }
 
-    // Fallback de compatibilidad si la tabla en Supabase aún no tiene las columnas nuevas
     if (error) {
       const legacyPayload = {
         solicitante_nombre: fullPayload.solicitante_nombre,
@@ -674,6 +755,7 @@ export async function createTicketTI(
           ...(retry.data as TicketTI),
           tipo_solicitud: tipoSolicitud,
           asignado_a: normalizeAsignadoA(retry.data.asignado_a),
+          nota_publica: '',
           score_prioridad:
             retry.data.score_prioridad ?? retry.data.impacto * retry.data.urgencia,
           imagenes_urls: imagenesUrls,
@@ -710,6 +792,7 @@ export async function createTicketTI(
     score_prioridad: fullPayload.impacto * fullPayload.urgencia,
     estado: fullPayload.estado,
     asignado_a: fullPayload.asignado_a,
+    nota_publica: fullPayload.nota_publica,
     notas_tecnicas: fullPayload.notas_tecnicas,
     fecha_resolucion: fullPayload.estado === 'Resuelto' ? nowIso : null,
     imagenes_urls: imagenesUrls,
@@ -731,6 +814,7 @@ export async function updateTicketTI(
       TicketTI,
       | 'estado'
       | 'asignado_a'
+      | 'nota_publica'
       | 'notas_tecnicas'
       | 'impacto'
       | 'urgencia'
@@ -769,6 +853,7 @@ export async function updateTicketTI(
       const updatedTicket: TicketTI = {
         ...(data as TicketTI),
         asignado_a: normalizeAsignadoA(data.asignado_a),
+        nota_publica: data.nota_publica ?? (changes.nota_publica || ''),
         score_prioridad: data.score_prioridad ?? data.impacto * data.urgencia,
       };
       return { ticket: updatedTicket, mode: 'supabase' };
@@ -789,6 +874,7 @@ export async function updateTicketTI(
       ...item,
       ...changes,
       asignado_a: normalizeAsignadoA(changes.asignado_a ?? item.asignado_a),
+      nota_publica: changes.nota_publica ?? item.nota_publica ?? '',
       impacto: nextImpacto,
       urgencia: nextUrgencia,
       score_prioridad: nextImpacto * nextUrgencia,

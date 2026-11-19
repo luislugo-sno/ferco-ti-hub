@@ -6,6 +6,7 @@ import {
   Clock,
   AlertOctagon,
   MessageSquareCode,
+  MessageSquareText,
   Building2,
   User,
   Calendar,
@@ -15,6 +16,8 @@ import {
   Image as ImageIcon,
   ZoomIn,
   ClipboardList,
+  Eye,
+  Lock,
 } from 'lucide-react';
 import {
   AsignadoA,
@@ -47,6 +50,7 @@ interface TicketModalDialogProps {
         TicketTI,
         | 'estado'
         | 'asignado_a'
+        | 'nota_publica'
         | 'notas_tecnicas'
         | 'impacto'
         | 'urgencia'
@@ -67,9 +71,10 @@ export const TicketModalDialog: React.FC<TicketModalDialogProps> = ({
 }) => {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const lightboxRef = useRef<HTMLDialogElement>(null);
-  const notasRef = useRef<HTMLTextAreaElement>(null);
+  const notaPublicaRef = useRef<HTMLTextAreaElement>(null);
   const titleId = useId();
   const lightboxTitleId = useId();
+  const notaPublicaId = useId();
   const notasId = useId();
   const asignadoId = useId();
   const categoriaId = useId();
@@ -83,6 +88,7 @@ export const TicketModalDialog: React.FC<TicketModalDialogProps> = ({
   const [sedeComercial, setSedeComercial] = useState<string>('N/A (Oficina / No aplica)');
   const [impacto, setImpacto] = useState<NivelImpacto>(1);
   const [urgencia, setUrgencia] = useState<NivelUrgencia>(1);
+  const [notaPublica, setNotaPublica] = useState('');
   const [notasTecnicas, setNotasTecnicas] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [savedNotice, setSavedNotice] = useState(false);
@@ -103,6 +109,7 @@ export const TicketModalDialog: React.FC<TicketModalDialogProps> = ({
       setSedeComercial(parsedUbic.sede);
       setImpacto(ticket.impacto);
       setUrgencia(ticket.urgencia);
+      setNotaPublica(ticket.nota_publica || '');
       setNotasTecnicas(ticket.notas_tecnicas || '');
       setSavedNotice(false);
       setZoomedImageUrl(null);
@@ -212,6 +219,7 @@ export const TicketModalDialog: React.FC<TicketModalDialogProps> = ({
         departamento_tienda: composeUbicacion(departamento, sedeComercial),
         impacto,
         urgencia,
+        nota_publica: notaPublica,
         notas_tecnicas: notasTecnicas,
       });
       setSavedNotice(true);
@@ -232,6 +240,7 @@ export const TicketModalDialog: React.FC<TicketModalDialogProps> = ({
         departamento_tienda: composeUbicacion(departamento, sedeComercial),
         impacto,
         urgencia,
+        nota_publica: notaPublica,
         notas_tecnicas: notasTecnicas,
       });
       setSavedNotice(true);
@@ -587,26 +596,60 @@ export const TicketModalDialog: React.FC<TicketModalDialogProps> = ({
             </div>
           </div>
 
-          {/* Notas Técnicas */}
-          <div>
-            <label
-              htmlFor={notasId}
-              className="mb-1 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-700"
-            >
-              <MessageSquareCode className="h-3.5 w-3.5 text-blue-700" aria-hidden="true" />
-              <span>Bitácora / Notas Técnicas de Resolución o Proveedor</span>
-            </label>
-            <textarea
-              ref={notasRef}
-              id={notasId}
-              name="notas_tecnicas"
-              rows={3}
-              autoFocus
-              value={notasTecnicas}
-              onChange={(e) => setNotasTecnicas(e.target.value)}
-              placeholder="Documente diagnóstico técnico, número de ticket con proveedor ISP/Odoo o solución aplicada..."
-              className="w-full rounded-sm border border-slate-300 bg-white p-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700 sm:text-xs"
-            />
+          {/* SEPARACIÓN DE NOTAS: 1. NOTA PÚBLICA PARA EL SOLICITANTE / 2. NOTAS TÉCNICAS INTERNAS */}
+          <div className="space-y-3 border-t border-slate-200 pt-3">
+            {/* 1. Nota Pública para el Solicitante (nota_publica) */}
+            <div className="rounded-sm border border-blue-200 bg-blue-50/40 p-3">
+              <div className="mb-1.5 flex flex-wrap items-center justify-between gap-1.5">
+                <label
+                  htmlFor={notaPublicaId}
+                  className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-blue-900"
+                >
+                  <MessageSquareText className="h-3.5 w-3.5 text-blue-700" aria-hidden="true" />
+                  <span>1. Nota Pública para el Solicitante</span>
+                </label>
+                <span className="inline-flex items-center gap-1 rounded-sm border border-blue-300 bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-900">
+                  <Eye className="h-3 w-3 text-blue-700" aria-hidden="true" />
+                  Visible para el usuario en &apos;Consultar mi Ticket&apos;
+                </span>
+              </div>
+              <textarea
+                ref={notaPublicaRef}
+                id={notaPublicaId}
+                name="nota_publica"
+                rows={2}
+                value={notaPublica}
+                onChange={(e) => setNotaPublica(e.target.value)}
+                placeholder="Escriba aquí la respuesta o actualización oficial que verá el solicitante al consultar su ticket..."
+                className="w-full rounded-sm border border-slate-300 bg-white p-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700 sm:text-xs"
+              />
+            </div>
+
+            {/* 2. Notas Técnicas Internas (notas_tecnicas) */}
+            <div className="rounded-sm border border-slate-200 bg-slate-50 p-3">
+              <div className="mb-1.5 flex flex-wrap items-center justify-between gap-1.5">
+                <label
+                  htmlFor={notasId}
+                  className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-800"
+                >
+                  <MessageSquareCode className="h-3.5 w-3.5 text-slate-600" aria-hidden="true" />
+                  <span>2. Notas Técnicas Internas</span>
+                </label>
+                <span className="inline-flex items-center gap-1 rounded-sm border border-slate-300 bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-800">
+                  <Lock className="h-3 w-3 text-slate-700" aria-hidden="true" />
+                  Privado — Solo visible para el equipo BI/TI
+                </span>
+              </div>
+              <textarea
+                id={notasId}
+                name="notas_tecnicas"
+                rows={3}
+                value={notasTecnicas}
+                onChange={(e) => setNotasTecnicas(e.target.value)}
+                placeholder="Documente diagnóstico técnico interno, IPs, queries SQL, tickets con ISP/terceros o causa raíz..."
+                className="w-full rounded-sm border border-slate-300 bg-white p-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-700 sm:text-xs"
+              />
+            </div>
           </div>
 
           {/* Pie del Modal */}

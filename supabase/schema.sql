@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS public.tickets_ti (
     )
   ),
   asignado_a TEXT NOT NULL DEFAULT 'Luis Lugo - Analista BI/TI',
+  nota_publica TEXT DEFAULT '',
   notas_tecnicas TEXT DEFAULT '',
   fecha_resolucion TIMESTAMPTZ NULL,
   imagenes_urls TEXT[] NOT NULL DEFAULT '{}',
@@ -41,6 +42,7 @@ CREATE TABLE IF NOT EXISTS public.tickets_ti (
 -- 2.1 Migración segura si la tabla tickets_ti ya existía previamente
 ALTER TABLE public.tickets_ti
   ADD COLUMN IF NOT EXISTS tipo_solicitud TEXT NOT NULL DEFAULT 'Soporte Técnico / TI',
+  ADD COLUMN IF NOT EXISTS nota_publica TEXT DEFAULT '',
   ADD COLUMN IF NOT EXISTS imagenes_urls TEXT[] NOT NULL DEFAULT '{}',
   ADD COLUMN IF NOT EXISTS respuestas_extra JSONB NOT NULL DEFAULT '{}'::jsonb;
 
@@ -80,7 +82,8 @@ CREATE TRIGGER set_tickets_ti_updated_at
   FOR EACH ROW
   EXECUTE FUNCTION public.handle_updated_at();
 
--- 5. Índices para optimizar consultas del Kanban y KPIs
+-- 5. Índices para optimizar consultas del Kanban, Portal Público y KPIs
+CREATE INDEX IF NOT EXISTS idx_tickets_ti_codigo_ticket ON public.tickets_ti(codigo_ticket);
 CREATE INDEX IF NOT EXISTS idx_tickets_ti_estado ON public.tickets_ti(estado);
 CREATE INDEX IF NOT EXISTS idx_tickets_ti_score_prioridad ON public.tickets_ti(score_prioridad DESC);
 CREATE INDEX IF NOT EXISTS idx_tickets_ti_created_at ON public.tickets_ti(created_at DESC);

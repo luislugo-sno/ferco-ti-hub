@@ -63,11 +63,17 @@ export interface TicketTI {
   score_prioridad: number;
   estado: EstadoTicket;
   asignado_a: AsignadoA;
+  nota_publica?: string | null;
   notas_tecnicas: string | null;
   fecha_resolucion: string | null;
   imagenes_urls?: string[];
   respuestas_extra?: Record<string, string | boolean>;
 }
+
+/**
+ * Vista pública segura del ticket para 'Consultar mi Ticket' (excluye notas_tecnicas)
+ */
+export type PublicTicketTI = Omit<TicketTI, 'notas_tecnicas'>;
 
 export interface NuevoTicketInput {
   tipo_solicitud?: TipoSolicitud;
@@ -80,6 +86,7 @@ export interface NuevoTicketInput {
   urgencia: NivelUrgencia;
   estado?: EstadoTicket;
   asignado_a?: AsignadoA;
+  nota_publica?: string;
   notas_tecnicas?: string;
   imagenes_urls?: string[];
   respuestas_extra?: Record<string, string | boolean>;
@@ -407,11 +414,16 @@ export function getSedeMeta(valorSede: string): SedeComercialItem {
   const found = CATALOGO_SEDES_DETALLE.find((s) => s.valor === valorSede);
   if (found) return found;
 
-  // Si es una sede añadida dinámicamente desde el Editor de Formulario
   let grupo: SedeComercialItem['grupo'] = 'General / Corporativo';
-  if (valorSede.toUpperCase().startsWith('SNÖ') || valorSede.toUpperCase().startsWith('SNO')) {
+  if (
+    valorSede.toUpperCase().startsWith('SNÖ') ||
+    valorSede.toUpperCase().startsWith('SNO')
+  ) {
     grupo = 'Tiendas SNÖ';
-  } else if (valorSede.toLowerCase().includes('chönkies') || valorSede.toLowerCase().includes('chonkies')) {
+  } else if (
+    valorSede.toLowerCase().includes('chönkies') ||
+    valorSede.toLowerCase().includes('chonkies')
+  ) {
     grupo = 'Tiendas Chönkies';
   } else if (valorSede.startsWith('CDP') || valorSede.startsWith('CDA')) {
     grupo = 'Centros Logísticos (CDP / CDA)';
@@ -500,6 +512,19 @@ export function formatCodigoTicket(num?: number | null): string {
   return `FER-TI-${String(num).padStart(3, '0')}`;
 }
 
+/**
+ * Normaliza entradas como "FER-TI-0014", "fer-ti-14", "0014" o "14" al número entero 14
+ */
+export function parseCodigoTicketInput(input: string): number | null {
+  if (!input || !input.trim()) return null;
+  const cleaned = input.trim().toUpperCase();
+  const digitsMatch = cleaned.match(/(\d+)$/);
+  if (!digitsMatch) return null;
+  const parsed = parseInt(digitsMatch[1], 10);
+  if (Number.isNaN(parsed) || parsed <= 0) return null;
+  return parsed;
+}
+
 export function getPrioridadMeta(score: number): {
   nivel: 'Crítico' | 'Medio' | 'Bajo';
   codigoSLA: 'P1 Crítico' | 'P2 Alto' | 'P3 Medio' | 'P4 Bajo';
@@ -534,13 +559,15 @@ export function getPrioridadMeta(score: number): {
   };
 }
 
-export function getHorasSinMoverse(ticket: TicketTI): number {
+export function getHorasSinMoverse(ticket: Pick<TicketTI, 'updated_at' | 'created_at'>): number {
   const refDate = ticket.updated_at || ticket.created_at;
   if (!refDate) return 0;
   const diffMs = Date.now() - new Date(refDate).getTime();
   return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60)));
 }
 
-export function estaEstancadoProveedor(ticket: TicketTI): boolean {
+export function estaEstancadoProveedor(
+  ticket: Pick<TicketTI, 'estado' | 'updated_at' | 'created_at'>
+): boolean {
   return ticket.estado === 'Esperando Proveedor/Tercero' && getHorasSinMoverse(ticket) >= 48;
 }

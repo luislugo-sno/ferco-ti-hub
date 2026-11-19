@@ -41,6 +41,7 @@ import { uploadTicketEvidenceImage } from '../lib/supabase';
 interface PortalSolicitudViewProps {
   onCreateTicket: (input: NuevoTicketInput) => Promise<TicketTI>;
   formSchema: FormSchemaConfig;
+  onViewTicketStatus?: (codigoFormateado: string) => void;
 }
 
 const GRUPOS_SEDES = [
@@ -60,6 +61,7 @@ interface UploadedImageItem {
 export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
   onCreateTicket,
   formSchema,
+  onViewTicketStatus,
 }) => {
   const formTitleId = useId();
   const nombreId = useId();
@@ -341,23 +343,36 @@ export const PortalSolicitudView: React.FC<PortalSolicitudViewProps> = ({
               </span>
             </div>
 
-            <button
-              type="button"
-              onClick={handleCopyCode}
-              className="inline-flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-sm border border-slate-300 bg-white px-4 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 sm:h-9 sm:min-h-0 sm:w-auto"
-            >
-              {copied ? (
-                <>
-                  <Check className="h-4 w-4 text-emerald-700" aria-hidden="true" />
-                  <span>Código Copiado</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="h-4 w-4 text-slate-500" aria-hidden="true" />
-                  <span>Copiar Código</span>
-                </>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <button
+                type="button"
+                onClick={handleCopyCode}
+                className="inline-flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-sm border border-slate-300 bg-white px-4 text-xs font-bold text-slate-800 transition hover:bg-slate-100 sm:h-9 sm:min-h-0 sm:w-auto"
+              >
+                {copied ? (
+                  <>
+                    <Check className="h-4 w-4 text-emerald-700" aria-hidden="true" />
+                    <span>Código Copiado</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-4 w-4 text-slate-500" aria-hidden="true" />
+                    <span>Copiar Código</span>
+                  </>
+                )}
+              </button>
+
+              {onViewTicketStatus && (
+                <button
+                  type="button"
+                  onClick={() => onViewTicketStatus(codigoFormateado)}
+                  className="inline-flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-sm bg-blue-700 px-4 text-xs font-bold text-white transition hover:bg-blue-800 sm:h-9 sm:min-h-0 sm:w-auto"
+                >
+                  <Search className="h-4 w-4" aria-hidden="true" />
+                  <span>Ver Estado de mi Ticket</span>
+                </button>
               )}
-            </button>
+            </div>
           </div>
 
           <dl className="grid grid-cols-1 gap-3 border-t border-slate-200 pt-4 text-xs sm:grid-cols-2">

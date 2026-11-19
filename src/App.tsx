@@ -3,6 +3,7 @@ import {
   ActiveTab,
   HeaderInstitucional,
 } from './components/HeaderInstitucional';
+import { ConsultarTicketView } from './components/ConsultarTicketView';
 import { PortalSolicitudView } from './components/PortalSolicitudView';
 import { CentroComandoView } from './components/CentroComandoView';
 import { DashboardKPIsView } from './components/DashboardKPIsView';
@@ -24,10 +25,12 @@ const SESSION_UNLOCK_KEY = 'ferco_ti_bi_unlocked_session';
 
 function getInitialTabFromUrl(): ActiveTab {
   const path = window.location.pathname.toLowerCase();
+  if (path.includes('/solicitar')) return 'solicitar';
   if (path.includes('/comando') || path.includes('/kanban')) return 'comando';
   if (path.includes('/metricas') || path.includes('/kpis')) return 'metricas';
   if (path.includes('/formulario') || path.includes('/configurar')) return 'formulario';
-  return 'solicitar';
+  // Ruta raíz '/' y '/consultar' abren directamente la pantalla pública "Consultar mi Ticket"
+  return 'consultar';
 }
 
 export const App: React.FC = () => {
@@ -37,6 +40,10 @@ export const App: React.FC = () => {
   );
   const [connectionMode, setConnectionMode] = useState<'supabase' | 'local'>('local');
   const [isLoading, setIsLoading] = useState(true);
+  const [trackedCodigoParam, setTrackedCodigoParam] = useState<string | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('codigo');
+  });
 
   const [isUnlocked, setIsUnlocked] = useState<boolean>(() => {
     return sessionStorage.getItem(SESSION_UNLOCK_KEY) === 'true';
@@ -51,7 +58,7 @@ export const App: React.FC = () => {
         requested === 'formulario') &&
       !unlocked
     ) {
-      return 'solicitar';
+      return 'consultar';
     }
     return requested;
   });
@@ -117,6 +124,9 @@ export const App: React.FC = () => {
   useEffect(() => {
     const onPopState = () => {
       const target = getInitialTabFromUrl();
+      const params = new URLSearchParams(window.location.search);
+      setTrackedCodigoParam(params.get('codigo'));
+
       if (
         (target === 'comando' || target === 'metricas' || target === 'formulario') &&
         !isUnlocked
@@ -131,10 +141,11 @@ export const App: React.FC = () => {
   }, [isUnlocked]);
 
   const getPathForTab = (tab: ActiveTab): string => {
+    if (tab === 'solicitar') return '/solicitar';
     if (tab === 'comando') return '/comando';
     if (tab === 'metricas') return '/metricas';
     if (tab === 'formulario') return '/configurar-formulario';
-    return '/solicitar';
+    return '/consultar';
   };
 
   const navigateToTab = (tab: ActiveTab) => {
@@ -152,6 +163,13 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleViewTicketStatus = (codigoFormateado: string) => {
+    setTrackedCodigoParam(codigoFormateado);
+    setActiveTab('consultar');
+    const nextUrl = `/consultar?codigo=${encodeURIComponent(codigoFormateado)}`;
+    window.history.pushState({}, '', nextUrl);
+  };
+
   const handleUnlockSuccess = () => {
     sessionStorage.setItem(SESSION_UNLOCK_KEY, 'true');
     setIsUnlocked(true);
@@ -164,8 +182,8 @@ export const App: React.FC = () => {
   const handleLock = () => {
     sessionStorage.removeItem(SESSION_UNLOCK_KEY);
     setIsUnlocked(false);
-    setActiveTab('solicitar');
-    window.history.pushState({}, '', '/solicitar');
+    setActiveTab('consultar');
+    window.history.pushState({}, '', '/consultar');
   };
 
   const handleCreateTicket = async (input: NuevoTicketInput): Promise<TicketTI> => {
@@ -182,6 +200,7 @@ export const App: React.FC = () => {
         TicketTI,
         | 'estado'
         | 'asignado_a'
+        | 'nota_publica'
         | 'notas_tecnicas'
         | 'impacto'
         | 'urgencia'
@@ -222,10 +241,16 @@ export const App: React.FC = () => {
               <span>Cargando Hub Operativo TI/BI...</span>
             </div>
           </div>
+        ) : activeTab === 'consultar' ? (
+          <ConsultarTicketView
+            initialCodigoParam={trackedCodigoParam}
+            onNavigateToSolicitar={() => navigateToTab('solicitar')}
+          />
         ) : activeTab === 'solicitar' ? (
           <PortalSolicitudView
             onCreateTicket={handleCreateTicket}
             formSchema={formSchema}
+            onViewTicketStatus={handleViewTicketStatus}
           />
         ) : activeTab === 'comando' ? (
           <CentroComandoView
@@ -255,7 +280,7 @@ export const App: React.FC = () => {
             Tecnología
           </span>
           <span className="text-slate-500">
-            Sistema ITSM • Matriz Impacto × Urgencia • Sincronización Global Supabase
+            Sistema ITSM • Matriz Impacto × Urgencia • Portal Público de Seguimiento
           </span>
         </div>
       </footer>

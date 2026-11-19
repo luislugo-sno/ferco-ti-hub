@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {
+  Search,
   FilePlus2,
   Kanban,
   BarChart3,
@@ -14,7 +15,12 @@ import {
 } from 'lucide-react';
 import { GcfVectorLogoSvg } from './BrandSvgElements';
 
-export type ActiveTab = 'solicitar' | 'comando' | 'metricas' | 'formulario';
+export type ActiveTab =
+  | 'consultar'
+  | 'solicitar'
+  | 'comando'
+  | 'metricas'
+  | 'formulario';
 
 interface HeaderInstitucionalProps {
   activeTab: ActiveTab;
@@ -136,6 +142,20 @@ export const HeaderInstitucional: React.FC<HeaderInstitucionalProps> = ({
               >
                 <button
                   type="button"
+                  onClick={() => onSelectTab('consultar')}
+                  aria-current={activeTab === 'consultar' ? 'page' : undefined}
+                  className={`flex items-center gap-1.5 rounded-sm px-3 py-1.5 text-xs font-semibold transition ${
+                    activeTab === 'consultar'
+                      ? 'bg-blue-700 text-white shadow-xs'
+                      : 'text-slate-700 hover:bg-white hover:text-slate-900'
+                  }`}
+                >
+                  <Search className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  <span>Consultar mi Ticket</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => onSelectTab('solicitar')}
                   aria-current={activeTab === 'solicitar' ? 'page' : undefined}
                   className={`flex items-center gap-1.5 rounded-sm px-3 py-1.5 text-xs font-semibold transition ${
@@ -234,6 +254,21 @@ export const HeaderInstitucional: React.FC<HeaderInstitucionalProps> = ({
             >
               <button
                 type="button"
+                onClick={() => handleMobileNav('consultar')}
+                className={`flex min-h-[44px] w-full items-center justify-between rounded-sm px-3 text-left text-xs font-bold ${
+                  activeTab === 'consultar'
+                    ? 'bg-blue-700 text-white'
+                    : 'bg-slate-50 text-slate-800 hover:bg-slate-100'
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <Search className="h-4 w-4" aria-hidden="true" />
+                  <span>Consultar mi Ticket (Seguimiento Público)</span>
+                </span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => handleMobileNav('solicitar')}
                 className={`flex min-h-[44px] w-full items-center justify-between rounded-sm px-3 text-left text-xs font-bold ${
                   activeTab === 'solicitar'
@@ -243,7 +278,7 @@ export const HeaderInstitucional: React.FC<HeaderInstitucionalProps> = ({
               >
                 <span className="flex items-center gap-2">
                   <FilePlus2 className="h-4 w-4" aria-hidden="true" />
-                  <span>Nuevo Requerimiento (Vista Solicitante)</span>
+                  <span>Nuevo Requerimiento (Registrar Solicitud)</span>
                 </span>
               </button>
 
@@ -307,11 +342,25 @@ export const HeaderInstitucional: React.FC<HeaderInstitucionalProps> = ({
         </div>
       </header>
 
-      {/* Barra de Navegación Inferior Fija en Móvil (360px - 430px) para acceso rápido con el pulgar */}
+      {/* Barra de Navegación Inferior Fija en Móvil (360px - 430px) */}
       <nav
         aria-label="Barra de navegación inferior móvil"
         className="fixed bottom-0 inset-x-0 z-30 flex border-t border-slate-300 bg-white shadow-sm lg:hidden"
       >
+        <button
+          type="button"
+          onClick={() => handleMobileNav('consultar')}
+          aria-current={activeTab === 'consultar' ? 'page' : undefined}
+          className={`flex min-h-[52px] flex-1 flex-col items-center justify-center gap-0.5 px-1 text-[10px] font-bold transition ${
+            activeTab === 'consultar'
+              ? 'border-t-2 border-blue-700 bg-blue-50/50 text-blue-700'
+              : 'text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span className="truncate">Consultar</span>
+        </button>
+
         <button
           type="button"
           onClick={() => handleMobileNav('solicitar')}
