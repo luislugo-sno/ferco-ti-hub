@@ -15,9 +15,12 @@ import {
   RefreshCw,
   Image as ImageIcon,
   ClipboardList,
+  Inbox,
+  ListTodo,
+  Wrench,
+  Hourglass,
 } from 'lucide-react';
 import {
-  EstadoTicket,
   formatCodigoTicket,
   formatSafeDateTime,
   getPrioridadMeta,
@@ -32,45 +35,90 @@ interface ConsultarTicketViewProps {
   onNavigateToSolicitar: () => void;
 }
 
-const STEPPER_HITOS: Array<{
-  estado: EstadoTicket;
+interface EstadoVisualMeta {
   titulo: string;
   descripcion: string;
-}> = [
-  {
-    estado: 'Bandeja de Entrada',
-    titulo: '1. Bandeja de Entrada',
-    descripcion: 'Recibido en cola de Triage BI/TI',
-  },
-  {
-    estado: 'En Cola',
-    titulo: '2. En Cola',
-    descripcion: 'Clasificado y asignado a especialista',
-  },
-  {
-    estado: 'En Progreso',
-    titulo: '3. En Progreso',
-    descripcion: 'Atención técnica o desarrollo en curso',
-  },
-  {
-    estado: 'Resuelto',
-    titulo: '4. Resuelto',
-    descripcion: 'Requerimiento completado y cerrado',
-  },
-];
+  cardClass: string;
+  iconBoxClass: string;
+  pillClass: string;
+  titleColorClass: string;
+  descColorClass: string;
+  IconComponent: React.FC<{ className?: string }>;
+}
 
-const STEPPER_STATES_ORDER = [
-  'Bandeja de Entrada',
-  'En Cola',
-  'En Progreso',
-  'Resuelto',
-];
+function getEstadoVisualMeta(estadoRaw?: string | null): EstadoVisualMeta {
+  const st =
+    typeof estadoRaw === 'string' && estadoRaw.trim()
+      ? estadoRaw.trim()
+      : 'Bandeja de Entrada';
 
-function getSafeStepIndex(estadoRaw?: string | null): number {
-  const st = typeof estadoRaw === 'string' && estadoRaw.trim() ? estadoRaw.trim() : 'Bandeja de Entrada';
-  if (st === 'Esperando Proveedor/Tercero') return 2;
-  const idx = STEPPER_STATES_ORDER.indexOf(st);
-  return idx >= 0 ? idx : 0;
+  switch (st) {
+    case 'En Cola':
+      return {
+        titulo: 'En Cola de Atención',
+        descripcion:
+          'Requerimiento clasificado y asignado a un especialista. Será atendido según su orden de prioridad.',
+        cardClass: 'bg-blue-50 border-blue-200 border-l-blue-600',
+        iconBoxClass: 'text-blue-700 bg-blue-100 border-blue-200',
+        pillClass: 'text-blue-700 bg-blue-100 border-blue-200',
+        titleColorClass: 'text-blue-950',
+        descColorClass: 'text-blue-900',
+        IconComponent: ListTodo,
+      };
+
+    case 'En Progreso':
+      return {
+        titulo: 'En Progreso (Atención en Curso)',
+        descripcion:
+          'Un especialista de BI/TI está trabajando activamente en la solución de este requerimiento.',
+        cardClass: 'bg-amber-50 border-amber-200 border-l-amber-600',
+        iconBoxClass: 'text-amber-800 bg-amber-100 border-amber-200',
+        pillClass: 'text-amber-800 bg-amber-100 border-amber-200',
+        titleColorClass: 'text-amber-950',
+        descColorClass: 'text-amber-900',
+        IconComponent: Wrench,
+      };
+
+    case 'Esperando Proveedor/Tercero':
+      return {
+        titulo: 'Esperando Proveedor / Tercero',
+        descripcion:
+          'La gestión depende actualmente de una validación externa, proveedor de servicio o respuesta del solicitante.',
+        cardClass: 'bg-orange-50 border-orange-200 border-l-orange-600',
+        iconBoxClass: 'text-orange-800 bg-orange-100 border-orange-200',
+        pillClass: 'text-orange-800 bg-orange-100 border-orange-200',
+        titleColorClass: 'text-orange-950',
+        descColorClass: 'text-orange-900',
+        IconComponent: Hourglass,
+      };
+
+    case 'Resuelto':
+      return {
+        titulo: 'Resuelto y Cerrado',
+        descripcion:
+          'El requerimiento fue completado satisfactoriamente por el equipo de BI/TI.',
+        cardClass: 'bg-emerald-50 border-emerald-200 border-l-emerald-600',
+        iconBoxClass: 'text-emerald-800 bg-emerald-100 border-emerald-200',
+        pillClass: 'text-emerald-800 bg-emerald-100 border-emerald-200',
+        titleColorClass: 'text-emerald-950',
+        descColorClass: 'text-emerald-900',
+        IconComponent: CheckCircle2,
+      };
+
+    case 'Bandeja de Entrada':
+    default:
+      return {
+        titulo: 'Bandeja de Entrada (En Triage)',
+        descripcion:
+          'Tu solicitud fue recibida y está pendiente de clasificación y asignación por el equipo BI/TI.',
+        cardClass: 'bg-slate-50 border-slate-300 border-l-slate-600',
+        iconBoxClass: 'text-slate-700 bg-slate-200 border-slate-300',
+        pillClass: 'text-slate-700 bg-slate-200 border-slate-300',
+        titleColorClass: 'text-slate-900',
+        descColorClass: 'text-slate-700',
+        IconComponent: Inbox,
+      };
+  }
 }
 
 function extractSafeCodeNumber(input?: string | null): number {
@@ -164,7 +212,9 @@ export const ConsultarTicketView: React.FC<ConsultarTicketViewProps> = ({
         if (!Number.isNaN(num) && num > 0) {
           void executeLookup(num, false);
         } else {
-          setInputError('Código inválido en el enlace. Ingrese un código válido (ej. FER-TI-002 o 2).');
+          setInputError(
+            'Código inválido en el enlace. Ingrese un código válido (ej. FER-TI-002 o 2).'
+          );
           setTicketResult(null);
           setHasSearched(false);
         }
@@ -267,8 +317,8 @@ export const ConsultarTicketView: React.FC<ConsultarTicketViewProps> = ({
     ? formatSafeDateTime(ticket.fecha_resolucion, '')
     : '';
 
-  const stepIndex = getSafeStepIndex(estadoActual);
-  const isWaitingThirdParty = estadoActual === 'Esperando Proveedor/Tercero';
+  const estadoVisual = getEstadoVisualMeta(estadoActual);
+  const EstadoIcon = estadoVisual.IconComponent;
   const ubicacion = parseUbicacion(ticket?.departamento_tienda);
   const prioridadMeta = getPrioridadMeta(ticket?.score_prioridad ?? 1);
   const codigoMostrado = formatCodigoTicket(ticket?.codigo_ticket);
@@ -469,107 +519,48 @@ export const ConsultarTicketView: React.FC<ConsultarTicketViewProps> = ({
           </div>
 
           <div className="space-y-5 p-4 sm:p-6">
-            {/* BARRA DE PROGRESO VISUAL (STEPPER HORIZONTAL EN PC / VERTICAL EN MÓVIL) */}
+            {/* TARJETA ÚNICA DESTACADA DE PROGRESO / ESTADO ACTUAL */}
             <div>
               <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
                   Progreso de Atención del Requerimiento
                 </span>
-                <span className="rounded-sm border border-slate-300 bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-900">
+                <span
+                  className={`rounded-sm border px-2.5 py-0.5 text-xs font-bold ${estadoVisual.pillClass}`}
+                >
                   Estado actual: {estadoActual}
                 </span>
               </div>
 
-              {/* Alerta destacada si está en 'Esperando Proveedor/Tercero' */}
-              {isWaitingThirdParty && (
-                <div
-                  role="status"
-                  className="mb-3 flex items-start gap-2.5 rounded-sm border border-amber-400 bg-amber-50 p-3 text-xs text-amber-950"
-                >
-                  <AlertTriangle
-                    className="mt-0.5 h-4 w-4 shrink-0 text-amber-700"
-                    aria-hidden="true"
-                  />
-                  <div>
-                    <strong className="block font-bold text-amber-900">
-                      Estado Especial: Esperando Proveedor / Tercero Externo
-                    </strong>
-                    <span className="mt-0.5 block leading-relaxed text-amber-800">
-                      Este requerimiento ya fue diagnosticado por el equipo BI/TI y se
-                      encuentra a la espera de validación, respuesta o intervención de un
-                      proveedor o tercero externo (ej. proveedor de internet/ISP, soporte
-                      externo o autorización).
-                    </span>
+              <div
+                role="status"
+                aria-live="polite"
+                className={`w-full rounded-sm border border-l-4 p-4 transition ${estadoVisual.cardClass}`}
+              >
+                <div className="flex items-start gap-3.5">
+                  <div
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-sm border ${estadoVisual.iconBoxClass}`}
+                  >
+                    <EstadoIcon className="h-5 w-5" aria-hidden="true" />
+                  </div>
+
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h4 className={`text-sm font-bold sm:text-base ${estadoVisual.titleColorClass}`}>
+                        {estadoVisual.titulo}
+                      </h4>
+                      <span
+                        className={`rounded-sm border px-2 py-0.5 font-mono text-[10px] font-bold uppercase ${estadoVisual.pillClass}`}
+                      >
+                        {estadoActual}
+                      </span>
+                    </div>
+                    <p className={`text-xs leading-relaxed ${estadoVisual.descColorClass}`}>
+                      {estadoVisual.descripcion}
+                    </p>
                   </div>
                 </div>
-              )}
-
-              {/* Stepper: Vertical en móvil (grid-cols-1), Horizontal en PC (sm:grid-cols-4) */}
-              <ol
-                aria-label="Hitos de progreso del ticket"
-                className="grid grid-cols-1 gap-2 sm:grid-cols-4"
-              >
-                {STEPPER_HITOS.map((hito, idx) => {
-                  const isCompleted =
-                    idx < stepIndex || (idx === 3 && estadoActual === 'Resuelto');
-                  const isCurrent =
-                    idx === stepIndex && estadoActual !== 'Resuelto';
-                  const isCurrentWaiting = isCurrent && isWaitingThirdParty;
-
-                  let boxClasses =
-                    'border-slate-200 bg-slate-50 text-slate-500';
-                  let badgeClasses =
-                    'border-slate-300 bg-white text-slate-500';
-
-                  if (isCompleted) {
-                    boxClasses =
-                      'border-emerald-300 bg-emerald-50/60 text-emerald-950';
-                    badgeClasses =
-                      'border-emerald-600 bg-emerald-600 text-white';
-                  } else if (isCurrentWaiting) {
-                    boxClasses =
-                      'border-2 border-amber-500 bg-amber-50 text-amber-950';
-                    badgeClasses =
-                      'border-amber-600 bg-amber-500 text-white';
-                  } else if (isCurrent) {
-                    boxClasses =
-                      'border-2 border-blue-700 bg-blue-50/50 text-slate-900';
-                    badgeClasses =
-                      'border-blue-700 bg-blue-700 text-white';
-                  }
-
-                  return (
-                    <li
-                      key={hito.estado}
-                      aria-current={isCurrent ? 'step' : undefined}
-                      className={`flex items-start gap-2.5 rounded-sm border p-3 transition sm:flex-col sm:gap-1.5 ${boxClasses}`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm border font-mono text-xs font-bold ${badgeClasses}`}
-                        >
-                          {isCompleted ? (
-                            <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
-                          ) : (
-                            idx + 1
-                          )}
-                        </span>
-                        <span className="text-xs font-bold leading-tight">
-                          {isCurrentWaiting
-                            ? '3. Esperando Proveedor'
-                            : hito.titulo}
-                        </span>
-                      </div>
-
-                      <p className="text-[11px] leading-snug opacity-85">
-                        {isCurrentWaiting
-                          ? 'En espera de validación o respuesta de tercero externo'
-                          : hito.descripcion}
-                      </p>
-                    </li>
-                  );
-                })}
-              </ol>
+              </div>
             </div>
 
             {/* RECUADRO DESTACADO: ACTUALIZACIÓN / RESPUESTA DEL EQUIPO BI/TI (ÚNICAMENTE NOTA_PUBLICA) */}
