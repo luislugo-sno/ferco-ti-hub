@@ -19,6 +19,7 @@ import {
   ListTodo,
   Wrench,
   Hourglass,
+  Download,
 } from 'lucide-react';
 import {
   formatCodigoTicket,
@@ -28,6 +29,7 @@ import {
   PublicTicketTI,
 } from '../types/tickets';
 import { fetchPublicTicketByCodigo, supabase } from '../lib/supabase';
+import { downloadTicketReceiptPng } from '../lib/receiptGenerator';
 import { SpecialistBadge } from './BrandSvgElements';
 
 interface ConsultarTicketViewProps {
@@ -161,6 +163,18 @@ export const ConsultarTicketView: React.FC<ConsultarTicketViewProps> = ({
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [hasSearched, setHasSearched] = useState<boolean>(false);
   const [inputError, setInputError] = useState<string>('');
+  const [receiptSavedNotice, setReceiptSavedNotice] = useState<boolean>(false);
+
+  const handleDownloadPublicReceipt = () => {
+    if (!ticketResult) return;
+    try {
+      downloadTicketReceiptPng(ticketResult);
+      setReceiptSavedNotice(true);
+      setTimeout(() => setReceiptSavedNotice(false), 3500);
+    } catch (err) {
+      console.error('Error descargando comprobante PNG:', err);
+    }
+  };
 
   const executeLookup = useCallback(async (num: number, updateUrl = true) => {
     if (typeof num !== 'number' || Number.isNaN(num) || num <= 0) {
@@ -482,16 +496,36 @@ export const ConsultarTicketView: React.FC<ConsultarTicketViewProps> = ({
                 </span>
               </div>
 
-              <button
-                type="button"
-                onClick={() =>
-                  searchedCodeNum && void executeLookup(searchedCodeNum, false)
-                }
-                className="inline-flex min-h-[38px] items-center justify-center gap-1.5 self-start rounded-sm border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 sm:min-h-0 sm:self-auto"
-              >
-                <RefreshCw className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
-                <span>Actualizar Estatus</span>
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleDownloadPublicReceipt}
+                  className="inline-flex min-h-[38px] items-center justify-center gap-1.5 rounded-sm bg-blue-700 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-blue-800 sm:min-h-0"
+                >
+                  <Download className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  <span>Descargar Comprobante</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    searchedCodeNum && void executeLookup(searchedCodeNum, false)
+                  }
+                  className="inline-flex min-h-[38px] items-center justify-center gap-1.5 rounded-sm border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 sm:min-h-0"
+                >
+                  <RefreshCw className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
+                  <span>Actualizar Estatus</span>
+                </button>
+              </div>
+            </div>
+
+            <div aria-live="polite">
+              {receiptSavedNotice && (
+                <div className="mt-2.5 flex items-center gap-2 rounded-sm border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-900">
+                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-700" aria-hidden="true" />
+                  <span>Comprobante guardado en tu dispositivo</span>
+                </div>
+              )}
             </div>
 
             <h3 className="mt-2.5 text-base font-bold text-slate-900 sm:text-lg">

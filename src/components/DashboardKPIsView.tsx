@@ -1,4 +1,4 @@
-import React, { useId, useState } from 'react';
+import React, { useId, useMemo, useState } from 'react';
 import {
   Activity,
   CheckCircle2,
@@ -11,6 +11,10 @@ import {
   Check,
   Clock,
   Flame,
+  CalendarRange,
+  Timer,
+  Building2,
+  SplitSquareVertical,
 } from 'lucide-react';
 import {
   DEFAULT_FORM_SCHEMA,
@@ -52,6 +56,54 @@ interface DashboardKPIsViewProps {
   ) => Promise<void>;
 }
 
+export type RangoFechaKPI =
+  | 'ESTE_MES'
+  | 'MES_ANTERIOR'
+  | 'ULTIMOS_30_DIAS'
+  | 'HISTORICO';
+
+const RANGO_FECHA_OPTIONS: Array<{ value: RangoFechaKPI; label: string }> = [
+  { value: 'ESTE_MES', label: 'Este Mes' },
+  { value: 'MES_ANTERIOR', label: 'Mes Anterior' },
+  { value: 'ULTIMOS_30_DIAS', label: 'Últimos 30 días' },
+  { value: 'HISTORICO', label: 'Histórico Completo' },
+];
+
+function isTicketInDateRange(ticket: TicketTI, rango: RangoFechaKPI): boolean {
+  if (rango === 'HISTORICO') return true;
+  if (!ticket?.created_at) return true;
+
+  const createdDate = new Date(ticket.created_at);
+  const createdMs = createdDate.getTime();
+  if (Number.isNaN(createdMs)) return true;
+
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+
+  if (rango === 'ESTE_MES') {
+    return (
+      createdDate.getFullYear() === currentYear &&
+      createdDate.getMonth() === currentMonth
+    );
+  }
+
+  if (rango === 'MES_ANTERIOR') {
+    const prevMonthDate = new Date(currentYear, currentMonth - 1, 1);
+    return (
+      createdDate.getFullYear() === prevMonthDate.getFullYear() &&
+      createdDate.getMonth() === prevMonthDate.getMonth()
+    );
+  }
+
+  if (rango === 'ULTIMOS_30_DIAS') {
+    const hace30DiasMs = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    return createdMs >= hace30DiasMs;
+  }
+
+  return true;
+}
+
 export const DashboardKPIsView: React.FC<DashboardKPIsViewProps> = ({
   tickets,
   formSchema = DEFAULT_FORM_SCHEMA,
@@ -63,6 +115,9 @@ export const DashboardKPIsView: React.FC<DashboardKPIsViewProps> = ({
   const filterSedeId = useId();
   const filterAsignadoId = useId();
   const newPinInputId = useId();
+
+  // Filtro Superior de Rango de Fechas (por defecto Histórico Completo o Últimos 30 días)
+  const [rangoFecha, setRangoFecha] = useState<RangoFechaKPI>('HISTORICO');
 
   const [filtroEstado, setFiltroEstado] = useState<string>('TODOS');
   const [filtroCategoria, setFiltroCategoria] = useState<string>('TODAS');
@@ -77,36 +132,122 @@ export const DashboardKPIsView: React.FC<DashboardKPIsViewProps> = ({
   const [isSavingPin, setIsSavingPin] = useState(false);
   const [pinSavedMsg, setPinSavedMsg] = useState<string | null>(null);
 
-  // Cálculos de KPIs Ejecutivos
-  const ticketsActivos = tickets.filter((t) => t.estado !== 'Resuelto');
-  const ticketsCriticosActivos = ticketsActivos.filter((t) => t.score_prioridad >= 6);
+  // 1. Tickets filtrados por el Rango de Fechas seleccionado
+  const ticketsEnRango = useMemo(
+    () => tickets.filter((t) => isTicketInDateRange(t, rangoFecha)),
+    [tickets, rangoFecha]
+  );
 
-  const hace7DiasMs = Date.now() - 7 * 24 * 60 * 60 * 1000;
-  const ticketsResueltosTotal = tickets.filter((t) => t.estado === 'Resuelto');
-  const ticketsResueltosSemana = ticketsResueltosTotal.filter((t) => {
-    const refDate = t.fecha_resolucion || t.updated_at || t.created_at;
-    return new Date(refDate).getTime() >= hace7DiasMs;
-  });
+  // 2. Cálculos de KPIs Ejecutivos sobre el rango seleccionado
+  const ticketsActivos = ticketsEnRango.filter((t) => t.estado !== 'Resuelto');
+  const ticketsCriticosActivos = ticketsActivos.filter(
+    (t) => (Number(t.score_prioridad) || 0) >= 6
+  );
 
-  const ticketsBloqueadosTerceros = tickets.filter(
+  const ticketsResueltosRango = ticketsEnRango.filter((t) => t.estado === 'Resuelto');
+
+  const ticketsBloqueadosTerceros = ticketsEnRango.filter(
     (t) => t.estado === 'Esperando Proveedor/Tercero'
   );
   const ticketsBloqueadosMas48h = ticketsBloqueadosTerceros.filter((t) =>
     estaEstancadoProveedor(t)
   );
 
-  // Carga comparativa clave (Odoo vs Infraestructura vs BI)
-  const countOdoo = ticketsActivos.filter(
-    (t) =>
-      t.categoria === 'Odoo ERP / TPV Tiendas' ||
-      t.tipo_solicitud === 'Consultas sobre Odoo'
-  ).length;
-  const countInfra = ticketsActivos.filter(
-    (t) => t.categoria === 'Infraestructura / Redes / Starlink'
-  ).length;
-  const countBI = ticketsActivos.filter(
-    (t) => t.categoria === 'Business Intelligence / Reportes'
-  ).length;
+  // 3. Tiempo Medio de Resolución (MTTR) calculado con la diferencia entre created_at y updated_at de tickets en estado 'Resuelto'
+  const mttrStats = useMemo(() => {
+    const diffsHours: number[] = [];
+    for (const t of ticketsResueltosRango) {
+      const startMs = t.created_at ? new Date(t.created_at).getTime() : Number.NaN;
+      const endRaw = t.updated_at || t.fecha_resolucion || t.created_at;
+      const endMs = endRaw ? new Date(endRaw).getTime() : Number.NaN;
+
+      if (!Number.isNaN(startMs) && !Number.isNaN(endMs) && endMs >= startMs) {
+        const hours = (endMs - startMs) / (1000 * 60 * 60);
+        diffsHours.push(hours);
+      }
+    }
+
+    if (diffsHours.length === 0) {
+      return { avgHours: null, count: 0, formatted: '—', detail: 'Sin cierres en el periodo' };
+    }
+
+    const sum = diffsHours.reduce((acc, h) => acc + h, 0);
+    const avg = sum / diffsHours.length;
+    const rounded = Math.round(avg * 10) / 10;
+
+    let detail = `Promedio sobre ${diffsHours.length} ticket(s) resuelto(s)`;
+    if (rounded >= 24) {
+      const days = Math.round((rounded / 24) * 10) / 10;
+      detail = `~${days} día(s) (${diffsHours.length} resueltos)`;
+    }
+
+    return {
+      avgHours: rounded,
+      count: diffsHours.length,
+      formatted: `${rounded} h`,
+      detail,
+    };
+  }, [ticketsResueltosRango]);
+
+  // 4. Comparativa visual Soporte Técnico / TI vs Consultas sobre Odoo
+  const comparativaTipo = useMemo(() => {
+    const total = ticketsEnRango.length;
+    const odooList = ticketsEnRango.filter(
+      (t) =>
+        t.tipo_solicitud === 'Consultas sobre Odoo' ||
+        t.categoria === 'Odoo ERP / TPV Tiendas'
+    );
+    const tiList = ticketsEnRango.filter(
+      (t) =>
+        t.tipo_solicitud !== 'Consultas sobre Odoo' &&
+        t.categoria !== 'Odoo ERP / TPV Tiendas'
+    );
+
+    const pctTI = total > 0 ? Math.round((tiList.length / total) * 100) : 0;
+    const pctOdoo = total > 0 ? 100 - pctTI : 0;
+
+    return {
+      total,
+      tiCount: tiList.length,
+      tiActivos: tiList.filter((t) => t.estado !== 'Resuelto').length,
+      tiResueltos: tiList.filter((t) => t.estado === 'Resuelto').length,
+      pctTI,
+      odooCount: odooList.length,
+      odooActivos: odooList.filter((t) => t.estado !== 'Resuelto').length,
+      odooResueltos: odooList.filter((t) => t.estado === 'Resuelto').length,
+      pctOdoo,
+    };
+  }, [ticketsEnRango]);
+
+  // 5. Ranking Top 5 de departamento_tienda con mayor volumen de reportes
+  const top5Ubicaciones = useMemo(() => {
+    const countsMap = new Map<
+      string,
+      { total: number; activos: number; resueltos: number }
+    >();
+
+    for (const t of ticketsEnRango) {
+      const key = (t.departamento_tienda || 'ADMINISTRACIÓN').trim();
+      const prev = countsMap.get(key) || { total: 0, activos: 0, resueltos: 0 };
+      prev.total += 1;
+      if (t.estado === 'Resuelto') {
+        prev.resueltos += 1;
+      } else {
+        prev.activos += 1;
+      }
+      countsMap.set(key, prev);
+    }
+
+    const totalPeriodo = ticketsEnRango.length;
+    return Array.from(countsMap.entries())
+      .map(([ubicacion, stats]) => ({
+        ubicacion,
+        ...stats,
+        pct: totalPeriodo > 0 ? Math.round((stats.total / totalPeriodo) * 100) : 0,
+      }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 5);
+  }, [ticketsEnRango]);
 
   const todasLasCategorias = Array.from(
     new Set([
@@ -118,8 +259,8 @@ export const DashboardKPIsView: React.FC<DashboardKPIsViewProps> = ({
 
   const sedesMetaList = formSchema.sedes.map((s) => getSedeMeta(s));
 
-  // Historial filtrado para tabla y exportación CSV/Excel
-  const historialFiltrado = tickets.filter((t) => {
+  // Historial filtrado para tabla y exportación CSV/Excel (aplica rangoFecha + filtros de tabla)
+  const historialFiltrado = ticketsEnRango.filter((t) => {
     if (filtroEstado !== 'TODOS' && t.estado !== filtroEstado) return false;
     if (filtroCategoria !== 'TODAS' && t.categoria !== filtroCategoria) return false;
     if (filtroAsignado !== 'TODOS' && t.asignado_a !== filtroAsignado) return false;
@@ -136,9 +277,11 @@ export const DashboardKPIsView: React.FC<DashboardKPIsViewProps> = ({
 
   const handleExportCSV = () => {
     const headers = [
+      'Rango Reporte',
       'Codigo Ticket',
       'Tipo Solicitud',
       'Fecha Creacion',
+      'Ultima Actualizacion',
       'Solicitante',
       'Departamento / Area',
       'Sede Comercial / Centro',
@@ -151,11 +294,9 @@ export const DashboardKPIsView: React.FC<DashboardKPIsViewProps> = ({
       'Nivel SLA',
       'Estado Actual',
       'Asignado A',
-      'Horas Sin Moverse',
-      'Imagenes Adjuntas',
-      'Respuestas Extra',
-      'Notas Tecnicas',
-      'Fecha Resolucion',
+      'Tiempo Resolucion (Horas)',
+      'Nota Publica',
+      'Notas Tecnicas Internas',
     ];
 
     const escapeCsv = (val: unknown): string => {
@@ -164,19 +305,27 @@ export const DashboardKPIsView: React.FC<DashboardKPIsViewProps> = ({
       return `"${cleaned}"`;
     };
 
+    const rangoLabel =
+      RANGO_FECHA_OPTIONS.find((r) => r.value === rangoFecha)?.label || 'Histórico';
+
     const rows = historialFiltrado.map((t) => {
       const meta = getPrioridadMeta(t.score_prioridad);
       const ubic = parseUbicacion(t.departamento_tienda);
-      const extraStr =
-        t.respuestas_extra && Object.keys(t.respuestas_extra).length > 0
-          ? Object.entries(t.respuestas_extra)
-              .map(([k, v]) => `${k}: ${v}`)
-              .join(' | ')
-          : '';
+      let mttrTicket = 'En curso';
+      if (t.estado === 'Resuelto' && t.created_at) {
+        const sMs = new Date(t.created_at).getTime();
+        const eMs = new Date(t.updated_at || t.fecha_resolucion || t.created_at).getTime();
+        if (!Number.isNaN(sMs) && !Number.isNaN(eMs) && eMs >= sMs) {
+          mttrTicket = String(Math.round(((eMs - sMs) / (1000 * 60 * 60)) * 10) / 10);
+        }
+      }
+
       return [
+        rangoLabel,
         formatCodigoTicket(t.codigo_ticket),
         t.tipo_solicitud || 'Soporte Técnico / TI',
         new Date(t.created_at).toLocaleString('es-VE'),
+        new Date(t.updated_at || t.created_at).toLocaleString('es-VE'),
         t.solicitante_nombre,
         ubic.departamento,
         ubic.sede,
@@ -189,13 +338,9 @@ export const DashboardKPIsView: React.FC<DashboardKPIsViewProps> = ({
         meta.codigoSLA,
         t.estado,
         t.asignado_a,
-        getHorasSinMoverse(t),
-        t.imagenes_urls?.length || 0,
-        extraStr,
+        mttrTicket,
+        t.nota_publica || '',
         t.notas_tecnicas || '',
-        t.fecha_resolucion
-          ? new Date(t.fecha_resolucion).toLocaleString('es-VE')
-          : 'Pendiente',
       ]
         .map(escapeCsv)
         .join(';');
@@ -207,7 +352,10 @@ export const DashboardKPIsView: React.FC<DashboardKPIsViewProps> = ({
     const link = document.createElement('a');
     const dateStamp = new Date().toISOString().slice(0, 10);
     link.href = url;
-    link.setAttribute('download', `Reporte_Gestion_TI_BI_Ferco_${dateStamp}.csv`);
+    link.setAttribute(
+      'download',
+      `Reporte_BI_TI_Ferco_${rangoFecha}_${dateStamp}.csv`
+    );
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -241,39 +389,74 @@ export const DashboardKPIsView: React.FC<DashboardKPIsViewProps> = ({
 
   return (
     <div className="space-y-4 pb-20 lg:pb-6">
-      {/* Cabecera Ejecutiva + Exportación */}
-      <div className="flex flex-col justify-between gap-3 rounded-md border border-slate-200 bg-white p-4 shadow-xs sm:flex-row sm:items-center sm:px-5">
-        <div>
-          <span className="text-[11px] font-bold uppercase tracking-wider text-blue-700">
-            Reporte Ejecutivo de Gestión ITSM • Grupo Comercializadora Ferco
-          </span>
-          <h2 className="text-base font-bold text-slate-900 sm:text-lg">
-            Indicadores de Carga Operativa, SLA y Productividad BI/TI
-          </h2>
-          <p className="text-xs text-slate-600">
-            Consolidado de requerimientos por unidad de negocio, sedes comerciales y
-            desempeño de resolución.
-          </p>
+      {/* CABECERA EJECUTIVA + FILTRO DE RANGO DE FECHAS + EXPORTACIÓN */}
+      <div className="rounded-md border border-slate-200 bg-white p-4 shadow-xs sm:px-5">
+        <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-center">
+          <div>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-blue-700">
+              Reporte Ejecutivo de Gestión ITSM • Grupo Comercializadora Ferco
+            </span>
+            <h2 className="text-base font-bold text-slate-900 sm:text-lg">
+              Indicadores de Carga Operativa, MTTR y Productividad BI/TI
+            </h2>
+            <p className="text-xs text-slate-600">
+              Métricas recalculadas dinámicamente según el periodo seleccionado ({ticketsEnRango.length}{' '}
+              requerimientos en el rango).
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            <button
+              type="button"
+              onClick={() => setShowPinConfig((p) => !p)}
+              className="inline-flex min-h-[40px] w-full items-center justify-center gap-1.5 rounded-sm border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 sm:h-9 sm:min-h-0 sm:w-auto"
+            >
+              <KeyRound className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
+              <span>PIN Global</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleExportCSV}
+              className="inline-flex min-h-[40px] w-full items-center justify-center gap-1.5 rounded-sm bg-blue-700 px-4 text-xs font-bold text-white transition hover:bg-blue-800 sm:h-9 sm:min-h-0 sm:w-auto"
+            >
+              <Download className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>Exportar Excel / CSV ({historialFiltrado.length})</span>
+            </button>
+          </div>
         </div>
 
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <button
-            type="button"
-            onClick={() => setShowPinConfig((p) => !p)}
-            className="inline-flex min-h-[42px] w-full items-center justify-center gap-1.5 rounded-sm border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 sm:h-9 sm:min-h-0 sm:w-auto"
-          >
-            <KeyRound className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
-            <span>PIN Global (Supabase)</span>
-          </button>
+        {/* Selector Superior de Rango de Fechas */}
+        <div className="mt-3.5 flex flex-col gap-2 border-t border-slate-200 pt-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-700">
+            <CalendarRange className="h-4 w-4 text-blue-700" aria-hidden="true" />
+            <span>Periodo de Análisis y Exportación:</span>
+          </div>
 
-          <button
-            type="button"
-            onClick={handleExportCSV}
-            className="inline-flex min-h-[42px] w-full items-center justify-center gap-1.5 rounded-sm bg-blue-700 px-4 text-xs font-bold text-white transition hover:bg-blue-800 sm:h-9 sm:min-h-0 sm:w-auto"
+          <div
+            role="group"
+            aria-label="Filtro de rango de fechas"
+            className="grid grid-cols-2 gap-1.5 sm:flex sm:items-center"
           >
-            <Download className="h-3.5 w-3.5" aria-hidden="true" />
-            <span>Exportar Excel / CSV ({historialFiltrado.length})</span>
-          </button>
+            {RANGO_FECHA_OPTIONS.map((opt) => {
+              const active = rangoFecha === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setRangoFecha(opt.value)}
+                  className={`min-h-[38px] rounded-sm border px-3 py-1.5 text-xs font-bold transition sm:min-h-0 ${
+                    active
+                      ? 'border-blue-700 bg-blue-700 text-white shadow-xs'
+                      : 'border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -323,13 +506,13 @@ export const DashboardKPIsView: React.FC<DashboardKPIsViewProps> = ({
         </form>
       )}
 
-      {/* 1. TARJETAS RESUMEN DE KPIs (ESTILO FINANCIERO SOBRIO) */}
+      {/* 1. TARJETAS RESUMEN DE KPIs (INCLUYENDO MTTR) */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {/* Card 1: Total Tickets Activos */}
+        {/* Card 1: Total Tickets Activos en el Rango */}
         <div className="rounded-md border border-slate-200 bg-white p-4 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-              Total Tickets Activos
+              Tickets Activos (Periodo)
             </span>
             <Activity className="h-4 w-4 text-blue-700" aria-hidden="true" />
           </div>
@@ -338,45 +521,64 @@ export const DashboardKPIsView: React.FC<DashboardKPIsViewProps> = ({
               {ticketsActivos.length}
             </span>
             <span className="text-xs text-slate-500">
-              de {tickets.length} registrados
+              de {ticketsEnRango.length} en el rango
             </span>
           </div>
           <div className="mt-2.5 border-t border-slate-100 pt-2 text-xs">
             <span className="inline-flex items-center gap-1 rounded-sm border border-red-200 bg-red-50 px-2 py-0.5 font-bold text-red-800">
               <Flame className="h-3 w-3 text-red-600" aria-hidden="true" />
-              {ticketsCriticosActivos.length} Críticos (P1/P2)
+              {ticketsCriticosActivos.length} Críticos Activos (P1/P2)
             </span>
           </div>
         </div>
 
-        {/* Card 2: Tickets Resueltos en la Semana */}
+        {/* Card 2: Tickets Resueltos y Efectividad en el Rango */}
         <div className="rounded-md border border-slate-200 bg-white p-4 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-              Resueltos en la Semana
+              Tickets Resueltos
             </span>
             <CheckCircle2 className="h-4 w-4 text-emerald-700" aria-hidden="true" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="font-mono text-2xl font-bold text-emerald-700">
-              {ticketsResueltosSemana.length}
+              {ticketsResueltosRango.length}
             </span>
-            <span className="text-xs text-slate-500">
-              últimos 7 días ({ticketsResueltosTotal.length} histórico)
-            </span>
+            <span className="text-xs text-slate-500">cerrados en el periodo</span>
           </div>
           <div className="mt-2.5 border-t border-slate-100 pt-2 text-xs text-slate-600">
-            Efectividad de cierre:{' '}
+            Tasa de resolución:{' '}
             <strong className="font-mono text-slate-900">
-              {tickets.length > 0
-                ? Math.round((ticketsResueltosTotal.length / tickets.length) * 100)
+              {ticketsEnRango.length > 0
+                ? Math.round(
+                    (ticketsResueltosRango.length / ticketsEnRango.length) * 100
+                  )
                 : 0}
               %
             </strong>
           </div>
         </div>
 
-        {/* Card 3: Tareas Bloqueadas por Terceros */}
+        {/* Card 3: Tiempo Medio de Resolución (MTTR: created_at -> updated_at) */}
+        <div className="rounded-md border border-slate-200 bg-white p-4 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+              Tiempo Medio Resolución (MTTR)
+            </span>
+            <Timer className="h-4 w-4 text-blue-700" aria-hidden="true" />
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="font-mono text-2xl font-bold text-blue-700">
+              {mttrStats.formatted}
+            </span>
+            <span className="text-xs text-slate-500">promedio (creación a cierre)</span>
+          </div>
+          <div className="mt-2.5 border-t border-slate-100 pt-2 text-xs text-slate-600">
+            <span>{mttrStats.detail}</span>
+          </div>
+        </div>
+
+        {/* Card 4: Tareas Bloqueadas por Terceros */}
         <div className="rounded-md border border-slate-200 bg-white p-4 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
@@ -403,41 +605,155 @@ export const DashboardKPIsView: React.FC<DashboardKPIsViewProps> = ({
             )}
           </div>
         </div>
-
-        {/* Card 4: Carga Activa Odoo vs Infra vs BI */}
-        <div className="rounded-md border border-slate-200 bg-white p-4 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-              Carga: Odoo vs Infra vs BI
-            </span>
-            <Layers className="h-4 w-4 text-blue-700" aria-hidden="true" />
-          </div>
-          <div className="mt-2.5 grid grid-cols-3 gap-2 text-center">
-            <div className="rounded-sm border border-slate-200 bg-slate-50 p-1.5">
-              <span className="block font-mono text-base font-bold text-slate-900">
-                {countOdoo}
-              </span>
-              <span className="text-[10px] font-semibold text-slate-600">Odoo / TPV</span>
-            </div>
-            <div className="rounded-sm border border-slate-200 bg-slate-50 p-1.5">
-              <span className="block font-mono text-base font-bold text-slate-900">
-                {countInfra}
-              </span>
-              <span className="text-[10px] font-semibold text-slate-600">Infra / Red</span>
-            </div>
-            <div className="rounded-sm border border-slate-200 bg-slate-50 p-1.5">
-              <span className="block font-mono text-base font-bold text-slate-900">
-                {countBI}
-              </span>
-              <span className="text-[10px] font-semibold text-slate-600">BI / Datos</span>
-            </div>
-          </div>
-        </div>
       </div>
 
-      {/* 2. DESGLOSE EJECUTIVO: PERSONAL BI/TI (4 INTEGRANTES) Y CATEGORÍAS */}
+      {/* 2. COMPARATIVA SOPORTE TI VS CONSULTAS ODOO + TOP 5 UBICACIONES CON MAYOR VOLUMEN */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-        {/* Matriz de Carga de los 4 Integrantes BI/TI (Tarjetas en móvil, Tabla en sm+) */}
+        {/* Comparativa Visual: Soporte Técnico / TI vs Consultas sobre Odoo */}
+        <section className="rounded-md border border-slate-200 bg-white p-4 shadow-xs lg:col-span-5">
+          <div className="mb-3 flex items-center justify-between border-b border-slate-200 pb-2">
+            <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-800">
+              <SplitSquareVertical className="h-4 w-4 text-blue-700" aria-hidden="true" />
+              <span>Comparativa: Soporte TI vs Consultas sobre Odoo</span>
+            </h3>
+            <span className="font-mono text-[11px] font-semibold text-slate-500">
+              {comparativaTipo.total} total
+            </span>
+          </div>
+
+          {/* Barra segmentada dual */}
+          <div className="mb-4">
+            <div className="flex h-3.5 w-full overflow-hidden rounded-sm border border-slate-200 bg-slate-100">
+              <div
+                className="h-full bg-blue-700 transition-all duration-300"
+                style={{ width: `${comparativaTipo.pctTI}%` }}
+                title={`Soporte Técnico / TI: ${comparativaTipo.pctTI}%`}
+              />
+              <div
+                className="h-full bg-slate-700 transition-all duration-300"
+                style={{ width: `${comparativaTipo.pctOdoo}%` }}
+                title={`Consultas sobre Odoo: ${comparativaTipo.pctOdoo}%`}
+              />
+            </div>
+            <div className="mt-1.5 flex items-center justify-between text-[11px] font-semibold">
+              <span className="flex items-center gap-1.5 text-blue-800">
+                <span className="h-2.5 w-2.5 rounded-sm bg-blue-700" />
+                Soporte Técnico / TI ({comparativaTipo.pctTI}%)
+              </span>
+              <span className="flex items-center gap-1.5 text-slate-800">
+                <span className="h-2.5 w-2.5 rounded-sm bg-slate-700" />
+                Consultas sobre Odoo ({comparativaTipo.pctOdoo}%)
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+            <div className="rounded-sm border border-slate-200 bg-slate-50 p-3">
+              <span className="text-[11px] font-bold uppercase text-blue-800">
+                Soporte Técnico / TI
+              </span>
+              <div className="mt-1 flex items-baseline justify-between">
+                <span className="font-mono text-xl font-bold text-slate-900">
+                  {comparativaTipo.tiCount}
+                </span>
+                <span className="font-mono text-xs font-semibold text-slate-500">
+                  {comparativaTipo.pctTI}%
+                </span>
+              </div>
+              <div className="mt-2 flex items-center justify-between border-t border-slate-200 pt-1.5 text-[11px]">
+                <span className="text-blue-700 font-semibold">
+                  {comparativaTipo.tiActivos} activos
+                </span>
+                <span className="text-emerald-700 font-semibold">
+                  {comparativaTipo.tiResueltos} resueltos
+                </span>
+              </div>
+            </div>
+
+            <div className="rounded-sm border border-slate-200 bg-slate-50 p-3">
+              <span className="text-[11px] font-bold uppercase text-slate-800">
+                Consultas sobre Odoo
+              </span>
+              <div className="mt-1 flex items-baseline justify-between">
+                <span className="font-mono text-xl font-bold text-slate-900">
+                  {comparativaTipo.odooCount}
+                </span>
+                <span className="font-mono text-xs font-semibold text-slate-500">
+                  {comparativaTipo.pctOdoo}%
+                </span>
+              </div>
+              <div className="mt-2 flex items-center justify-between border-t border-slate-200 pt-1.5 text-[11px]">
+                <span className="text-blue-700 font-semibold">
+                  {comparativaTipo.odooActivos} activos
+                </span>
+                <span className="text-emerald-700 font-semibold">
+                  {comparativaTipo.odooResueltos} resueltos
+                </span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Ranking Top 5 de departamento_tienda con mayor volumen de reportes */}
+        <section className="rounded-md border border-slate-200 bg-white p-4 shadow-xs lg:col-span-7">
+          <div className="mb-3 flex items-center justify-between border-b border-slate-200 pb-2">
+            <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-800">
+              <Building2 className="h-4 w-4 text-blue-700" aria-hidden="true" />
+              <span>Top 5 Departamentos / Sedes con Mayor Volumen de Reportes</span>
+            </h3>
+            <span className="text-[11px] font-medium text-slate-500">
+              Ranking por Demanda
+            </span>
+          </div>
+
+          {top5Ubicaciones.length === 0 ? (
+            <div className="py-8 text-center text-xs text-slate-500">
+              Sin reportes registrados en el rango de fechas seleccionado.
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {top5Ubicaciones.map((item, idx) => (
+                <div
+                  key={item.ubicacion}
+                  className="rounded-sm border border-slate-200 bg-slate-50 px-3 py-2"
+                >
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm border border-slate-300 bg-white font-mono text-[10px] font-bold text-slate-800">
+                        #{idx + 1}
+                      </span>
+                      <span className="truncate font-bold text-slate-900">
+                        {item.ubicacion}
+                      </span>
+                    </div>
+
+                    <div className="flex shrink-0 items-center gap-2 font-mono text-[11px]">
+                      <span className="font-bold text-slate-900">
+                        {item.total} {item.total === 1 ? 'ticket' : 'tickets'}
+                      </span>
+                      <span className="text-slate-300">|</span>
+                      <span className="text-blue-700">{item.activos} act.</span>
+                      <span className="text-emerald-700">{item.resueltos} res.</span>
+                      <span className="text-slate-500">({item.pct}%)</span>
+                    </div>
+                  </div>
+
+                  <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-sm bg-slate-200">
+                    <div
+                      className="h-full bg-blue-700 transition-all duration-300"
+                      style={{ width: `${Math.max(item.pct, 5)}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+
+      {/* 3. DESGLOSE EJECUTIVO: PERSONAL BI/TI (4 INTEGRANTES) Y CATEGORÍAS */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+        {/* Matriz de Carga de los 4 Integrantes BI/TI */}
         <section className="rounded-md border border-slate-200 bg-white p-4 shadow-xs lg:col-span-7">
           <div className="mb-3 flex items-center justify-between border-b border-slate-200 pb-2">
             <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-800">
@@ -453,7 +769,7 @@ export const DashboardKPIsView: React.FC<DashboardKPIsViewProps> = ({
           <div className="space-y-2 sm:hidden">
             {EQUIPO_TI_BI.map((miembro) => {
               const [nombrePersona, cargoPersona] = miembro.split(' - ');
-              const delMiembro = tickets.filter((t) => t.asignado_a === miembro);
+              const delMiembro = ticketsEnRango.filter((t) => t.asignado_a === miembro);
               const enProgreso = delMiembro.filter(
                 (t) => t.estado === 'En Progreso'
               ).length;
@@ -524,7 +840,9 @@ export const DashboardKPIsView: React.FC<DashboardKPIsViewProps> = ({
               <tbody className="divide-y divide-slate-200">
                 {EQUIPO_TI_BI.map((miembro) => {
                   const [nombrePersona, cargoPersona] = miembro.split(' - ');
-                  const delMiembro = tickets.filter((t) => t.asignado_a === miembro);
+                  const delMiembro = ticketsEnRango.filter(
+                    (t) => t.asignado_a === miembro
+                  );
                   const enProgreso = delMiembro.filter(
                     (t) => t.estado === 'En Progreso'
                   ).length;
@@ -594,14 +912,14 @@ export const DashboardKPIsView: React.FC<DashboardKPIsViewProps> = ({
 
           <div className="space-y-3">
             {todasLasCategorias
-              .filter((cat) => tickets.some((t) => t.categoria === cat))
+              .filter((cat) => ticketsEnRango.some((t) => t.categoria === cat))
               .map((cat) => {
-                const todosCat = tickets.filter((t) => t.categoria === cat);
+                const todosCat = ticketsEnRango.filter((t) => t.categoria === cat);
                 const activosCat = todosCat.filter((t) => t.estado !== 'Resuelto');
                 const resueltosCat = todosCat.filter((t) => t.estado === 'Resuelto');
                 const pct =
-                  tickets.length > 0
-                    ? Math.round((todosCat.length / tickets.length) * 100)
+                  ticketsEnRango.length > 0
+                    ? Math.round((todosCat.length / ticketsEnRango.length) * 100)
                     : 0;
 
                 return (
@@ -630,7 +948,7 @@ export const DashboardKPIsView: React.FC<DashboardKPIsViewProps> = ({
         </section>
       </div>
 
-      {/* 3. TABLA / TARJETAS DE HISTORIAL Y AUDITORÍA DE TICKETS */}
+      {/* 4. TABLA / TARJETAS DE HISTORIAL Y AUDITORÍA DE TICKETS */}
       <section className="rounded-md border border-slate-200 bg-white p-4 shadow-xs">
         <div className="mb-3 flex flex-col justify-between gap-3 border-b border-slate-200 pb-3 xl:flex-row xl:items-center">
           <div>
@@ -747,7 +1065,8 @@ export const DashboardKPIsView: React.FC<DashboardKPIsViewProps> = ({
         <div className="space-y-2 md:hidden">
           {historialFiltrado.length === 0 ? (
             <div className="rounded-sm border border-slate-200 p-6 text-center text-xs text-slate-500">
-              No existen registros que coincidan con los criterios de filtrado.
+              No existen registros que coincidan con los criterios de filtrado en este
+              periodo.
             </div>
           ) : (
             historialFiltrado.map((t) => {
@@ -811,7 +1130,8 @@ export const DashboardKPIsView: React.FC<DashboardKPIsViewProps> = ({
               {historialFiltrado.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
-                    No existen registros que coincidan con los criterios de filtrado.
+                    No existen registros que coincidan con los criterios de filtrado en este
+                    periodo.
                   </td>
                 </tr>
               ) : (
